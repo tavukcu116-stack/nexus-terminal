@@ -1,7 +1,6 @@
 import streamlit as str_plat
 import time
 import requests
-import random
 import pandas as pd
 
 # Sayfa Genişlik Ayarı
@@ -52,6 +51,12 @@ col4.metric("🧠 En İyi Kurulum / Seans", f"{best_setup} / {best_session}")
 
 # Kurumsal Telegram Mesaj Gönderim Fonksiyonu
 def telegram_kurumsal_firlat(enstruman, yon, score, guven, rr, session, market_rejimi, trend_gucu, htf_uyumu, setup_turu, entry_type, likidite, volatilite, haber, giris_1, giris_2, sl, tp, analiz_metni):
+    # Fiyat hassasiyet ayarı: Kripto/Forex virgülden sonra 5, Altın/Gümüş 2 basamak
+    f_g1 = f"{giris_1:.5f}" if "EUR" in enstruman else f"{giris_1:.2f}"
+    f_g2 = f"{giris_2:.5f}" if "EUR" in enstruman else f"{giris_2:.2f}"
+    f_sl = f"{sl:.5f}" if "EUR" in enstruman else f"{sl:.2f}"
+    f_tp = f"{tp:.5f}" if "EUR" in enstruman else f"{tp:.2f}"
+
     mesaj = f"""━━━━━━━━━━━━━━
 🏛️ NEXUS AI BULUT ALARMI ━━━━━━━━━━━━━━
 🔥 SETUP GRADE: A+
@@ -74,9 +79,9 @@ def telegram_kurumsal_firlat(enstruman, yon, score, guven, rr, session, market_r
 🌊 Volatilite: {volatilite}
 📰 Haber Riski: {haber}
 
-🎯 Giriş Aralığı: {giris_1:.5f if "USD" not in enstruman or "XAU" in enstruman else f"{giris_1:.2f}"} - {giris_2:.5f if "USD" not in enstruman or "XAU" in enstruman else f"{giris_2:.2f}"}
-🛑 Stop Loss: {sl:.5f if "USD" not in enstruman or "XAU" in enstruman else f"{sl:.2f}"}
-🎯 Take Profit: {tp:.5f if "USD" not in enstruman or "XAU" in enstruman else f"{tp:.2f}"}
+🎯 Giriş Aralığı: {f_g1} - {f_g2}
+🛑 Stop Loss: {f_sl}
+🎯 Take Profit: {f_tp}
 
 📝 Analiz:
 {analiz_metni}
@@ -95,8 +100,8 @@ def telegram_kurumsal_firlat(enstruman, yon, score, guven, rr, session, market_r
 if otonom_tarama:
     str_plat.success("🚀 PERFORMANCE & SELF-LEARNING ENGINE AKTİF: Yapay zekâ hafıza kartı devrede.")
     
-    if "canli_calisma_v2" not in str_plat.session_state:
-        str_plat.session_state["canli_calisma_v2"] = True
+    if "canli_calisma_v3" not in str_plat.session_state:
+        str_plat.session_state["canli_calisma_v3"] = True
         
         # İlk Çalışmada Akıllı Filtrelerden Geçmiş Canlı Kurulum Tetikleme
         telegram_kurumsal_firlat(
