@@ -10,7 +10,7 @@ str_plat.title("🏛️ NEXUS AI INSTITUTIONAL MASTER CORE")
 str_plat.subheader("🧠 Performance & Self-Learning Engine v2.0")
 
 # Sabit Değişkenler
-TOKEN = "7334751187:AAFb_J0O69iBIsZ8_E1N_ZtZpCg2xV9Wd9A"
+TOKEN = "8834309699:AAEjA7F4OmbIQHfd9769Lz640GweHPYoStI"
 CHAT_ID = "1183450421"
 
 # Yapay Zeka Yapay Hafıza Veritabanı Başlatma (Session State)
