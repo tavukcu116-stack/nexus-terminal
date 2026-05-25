@@ -17,7 +17,7 @@ with str_plat.sidebar:
 # Telegram Gönderim Fonksiyonu (Senin Şablonun)
 def telegram_firlat(enstruman, yon, giris_1, giris_2, sl, tp):
     token = "7334751187:AAFb_J0O69iBIsZ8_E1N_ZtZpCg2xV9Wd9A"  # Senin Bot Tokenin
-    chat_id = "1826019623"  # Senin Chat ID numaran
+    chat_id = "1183450421"  # Senin Chat ID numaran
     
     mesaj = f"""━━━━━━━━━━━━━━
 🏛️ NEXUS AI BULUT ALARMI ━━━━━━━━━━━━━━
