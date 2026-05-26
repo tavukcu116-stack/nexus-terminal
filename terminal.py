@@ -4,6 +4,7 @@ import requests
 import pandas as pd
 import numpy as np
 import datetime
+import time
 
 # ==========================================
 # SYSTEM ARCHITECTURE & INITIALIZATION
@@ -18,7 +19,6 @@ try:
     TOKEN = str_plat.secrets["TELEGRAM_TOKEN"]
     CHAT_ID = str_plat.secrets["TELEGRAM_CHAT_ID"]
 except:
-    # Güvenli mod yedekleme hattı
     TOKEN = "8834309699:AAEjA7F4OmbIQHfd9769Lz640GweHPYoStI"
     CHAT_ID = "1183450421"
 
@@ -34,7 +34,11 @@ if "trade_history" not in str_plat.session_state:
 with str_plat.sidebar:
     str_plat.header("⚙️ Institutional Control Desk")
     otonom_tarama = str_plat.toggle("🔄 Autonomous Sniper Engine Active", value=True)
-    tarama_araligi = str_plat.number_input("Scan Interval (Minutes)", min_value=1, max_value=60, value=15, step=1)
+    guncel_sure = str_plat.number_input("Scan Interval (Minutes)", min_value=1, max_value=60, value=15, step=1)
+    
+    str_plat.header("🌐 TradingView Integration")
+    tv_mode = str_plat.toggle("📡 TradingView Webhook Dinleyicisini Aç", value=False)
+    str_plat.code("// TradingView Webhook URL\nhttps://nexus-terminal.streamlit.app/webhook", language="javascript")
     
     str_plat.header("🏦 MetaTrader 5 Bridge Configuration")
     mt5_server = str_plat.text_input("MT5 Server Gateway", placeholder="Örn: FTMO-Demo")
@@ -49,7 +53,6 @@ with str_plat.sidebar:
 # 📈 ASYNC PURE LIVE MARKET DATA ENGINE
 # ==========================================
 async def async_live_ohlc_fetch(ticker, timeframe="15m"):
-    """Piyasadan ham OHLC mum verilerini asenkron olarak toplar"""
     try:
         url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval={timeframe}&range=5d"
         headers = {"User-Agent": "Mozilla/5.0"}
@@ -63,7 +66,6 @@ async def async_live_ohlc_fetch(ticker, timeframe="15m"):
         }).dropna().reset_index(drop=True)
         return df
     except:
-        # Sunucu kesintisinde koruma amaçlı stabil veri şeması üretimi
         prices = np.linspace(1.0820, 1.0845, 40) + np.random.normal(0, 0.0003, 40)
         return pd.DataFrame({'Open': prices-0.0002, 'High': prices+0.0004, 'Low': prices-0.0004, 'Close': prices})
 
@@ -71,29 +73,24 @@ async def async_live_ohlc_fetch(ticker, timeframe="15m"):
 # 🧠 ADVANCED MATH STRUCTURE & ATR REGIME ENGINE
 # ==========================================
 def quantitative_market_decode(df_ohlc):
-    """Gelişmiş Swing ve Volatilite Rejim Analizi Blokları"""
-    # 1. Rolling ATR & Volatility Regime Classification
     high_low = df_ohlc['High'] - df_ohlc['Low']
     rolling_atr = high_low.rolling(14).mean()
     current_atr = rolling_atr.iloc[-1] if not pd.isna(rolling_atr.iloc[-1]) else 0.0010
     
     vol_regime = "Trending (Healthy Volatility)" if high_low.iloc[-1] > current_atr else "Ranging / Compression"
     
-    # 2. Multi-Candle Fractal Structure Validation
     closes = df_ohlc['Close'].to_numpy()
     highs = df_ohlc['High'].to_numpy()
-    lows = df_ohlc['Low'].to_numpy()
     
     bos_detected = False
     choch_confirmed = False
     
-    # Gerçek Swing Kırılım Noktaları Kontrolü
-    if closes[-1] > highs[-3] and highs[-3] > highs[-4]:
-        bos_detected = True
-    if closes[-1] > highs[-5] and closes[-2] < highs[-5]:
-        choch_confirmed = True
+    if len(closes) >= 5:
+        if closes[-1] > highs[-3] and highs[-3] > highs[-4]:
+            bos_detected = True
+        if closes[-1] > highs[-5] and closes[-2] < highs[-5]:
+            choch_confirmed = True
         
-    # Momentum Hızı (EMA Alignment)
     ema_9 = df_ohlc['Close'].ewm(span=9, adjust=False).mean().iloc[-1]
     ema_21 = df_ohlc['Close'].ewm(span=21, adjust=False).mean().iloc[-1]
     ema_alignment = "Bullish" if ema_9 > ema_21 else "Bearish"
@@ -101,7 +98,6 @@ def quantitative_market_decode(df_ohlc):
     return current_atr, vol_regime, bos_detected, choch_confirmed, ema_alignment
 
 async def evaluate_macro_sentiment():
-    """DXY Korelasyon Matris Analizi"""
     df_dxy = await async_live_ohlc_fetch("DX-Y.NYB", "15m")
     if not df_dxy.empty:
         dxy_momentum = df_dxy['Close'].iloc[-1] > df_dxy['Close'].iloc[-5]
@@ -142,7 +138,7 @@ def telegram_sniper_broadcast(pair, direction, score, confidence, rr, regime, at
 🎯 Take Profit: {tp:.{ondalik}f}
 
 📝 Analiz:
-{structural_note}
+{structure_note}
 
 ━━━━━━━━━━━━━━
 🎯 NEXUS TRUE INSTITUTIONAL REJECTION ENGINE vULTIMATE
@@ -184,19 +180,14 @@ async def master_quant_pipeline():
     executed_signals = 0
     
     for name, ticker in pariteler.items():
-        # Asenkron mum verisi havuzu tetikleniyor
         df_candles = await async_live_ohlc_fetch(ticker, "15m")
         canli_fiyat = float(df_candles['Close'].iloc[-1])
         
-        # Matematiksel Dekoder Süzgeci
         atr, market_regime, bos, choch, ema_trend = quantitative_market_decode(df_candles)
         
-        # 0'DAN BAŞLAYAN DİNAMİK SCORING ENGINE (ASLA EL YORDAMIYLA SEÇİLMEZ)
         score = 5.0
-        confidence = 75
         rejection_logs = []
         
-        # Yapısal Kurumsal Koşul Puanlaması
         if bos: score += 2.0
         if choch: score += 1.5
         
@@ -210,25 +201,21 @@ async def master_quant_pipeline():
             sl = canli_fiyat + (atr * 2.0)
             tp = canli_fiyat - (atr * 4.0)
             
-        # Volatility Regime Filtre Mantığı (vULTIMATE Direktifi)
         if market_regime == "Trending (Healthy Volatility)":
             score += 1.0
             atr_status = "ATR Expansion Verified (Healthy Volatility)"
         else:
-            score -= 2.0  # Direktif Kuralı: if market_regime == "Ranging": score -= 2
+            score -= 2.0
             rejection_logs.append("Market regime is ranging/choppy (-2.0 Score)")
             atr_status = "Compression Cycles (Low ATR Environment)"
             
-        # Makro Akış ve Korelasyon Çelişki Testi
         if macro_trend == "DXY Strong" and direction == "BULLISH (Alış Yönlü)":
-            score -= 2.0  # Direktif Kuralı: if macro_flow_conflicts: score -= 2
+            score -= 2.0
             rejection_logs.append("Conflicting Macro Flow (Strong DXY vs Asset Long)")
             
-        # Skor Sınır Süzgeci
         score = min(10.0, max(0.0, score))
-        confidence = int(score * 9.5) # Skora göre dinamik güven aralığı hesaplama
+        confidence = int(score * 9.5)
         
-        # 🎯 ELITE ACTIVATION RULE (score >= 9.2 and confidence >= 85)
         if score >= 9.2 and confidence >= 85:
             str_plat.success(f"✅ {name} - APPROVED | Elite Setup Earned Activation! (Score: {score:.1f} | Conf: %{confidence})")
             telegram_sniper_broadcast(
@@ -247,12 +234,12 @@ async def master_quant_pipeline():
 # Asenkron Mikroservis Döngüsünü Tetikleme
 if otonom_tarama:
     asyncio.run(master_quant_pipeline())
-    str_plat.info(f"⏱️ vULTIMATE Scanner Engine completed execution. Sistem ekrandan girdiğin {tarama_araligi} dakikalık periyoda göre arka planda otonom kalacaktır.")
-    time.sleep(tarama_araligi * 60)
+    str_plat.info(f"⏱️ vULTIMATE Scanner Engine completed execution. Sistem {guncel_sure} dakikalık periyoda göre otonom kalacaktır.")
+    
+    # Değişken hatasının düzeltildiği güvenli bölge
+    time.sleep(int(guncel_sure) * 60)
     str_plat.experimental_rerun()
 else:
     str_plat.warning("Autonomous execution infrastructure is currently suspended.")
 
-# Hafıza Günlüğü Veritabanı Görüntüleme
-str_plat.write("### 🏛️ Machine Learning Evolution Layer (Performance Log Database)")
-str_plat.dataframe(df_perf)
+str_plat.write("### 🏛️ Machine Learning Evolution Layer (Performance Log Database
