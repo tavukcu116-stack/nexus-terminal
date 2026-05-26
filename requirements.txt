@@ -2,6 +2,6 @@ streamlit
 requests
 beautifulsoup4
 pytz
-yfinance
+schedule
 pandas
 numpy
