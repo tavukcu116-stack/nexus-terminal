@@ -115,7 +115,7 @@ def telegram_sniper_broadcast(pair, direction, score, confidence, rr, regime, at
 ━━━━━━━━━━━━━━
 
 🔥 SETUP GRADE: A+
-🏦 Institutional Score: {score:.1f}/10
+🏦 Institutional Score: {score}/10
 
 🎯 Enstrüman: {pair}
 📈 Yön: {direction}
@@ -236,10 +236,11 @@ if otonom_tarama:
     asyncio.run(master_quant_pipeline())
     str_plat.info(f"⏱️ vULTIMATE Scanner Engine completed execution. Sistem {guncel_sure} dakikalık periyoda göre otonom kalacaktır.")
     
-    # Değişken hatasının düzeltildiği güvenli bölge
     time.sleep(int(guncel_sure) * 60)
     str_plat.experimental_rerun()
 else:
     str_plat.warning("Autonomous execution infrastructure is currently suspended.")
 
-str_plat.write("### 🏛️ Machine Learning Evolution Layer (Performance Log Database
+# Tırnağın kapatıldığı nihai satır
+str_plat.write("### 🏛️ Machine Learning Evolution Layer (Performance Log Database)")
+str_plat.dataframe(df_perf)
