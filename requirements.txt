@@ -6,3 +6,5 @@ schedule
 pandas
 numpy
 xgboost
+redis
+websockets
