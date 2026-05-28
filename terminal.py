@@ -9,13 +9,69 @@ import os
 import xgboost as xgb
 
 # ==========================================
-# 🏛️ INSTITUTIONAL SETTINGS & PRODUCTION SECURE
+# 🎨 11) UI ARCHITECTURE (NEON MODERN CUSTOM CSS)
 # ==========================================
-st.set_page_config(page_title="NEXUS QUANT v36.0", layout="wide", page_icon="🏛️")
+st.set_page_config(page_title="NEXUS QUANT v37.0", layout="wide", page_icon="🏛️")
 
-st.title("🏛️ NEXUS QUANT v36.0 — Real-Time Live Autopilot")
-st.subheader("Anti-Spam Filter • Strictly Live Bar Execution • Microstructure Friction")
+# Glassmorphism ve Siyah/Neon Premium Tema CSS Enjeksiyonu
+st.markdown("""
+    <style>
+    /* Ana Arka Plan */
+    .stApp {
+        background-color: #0A0B0D !important;
+        color: #E4E6EB !important;
+    }
+    /* Sidebar Özelleştirme */
+    section[data-testid="stSidebar"] {
+        background-color: #111317 !important;
+        border-right: 1px solid #1F2226 !important;
+    }
+    /* Modern Kart Tasarımları */
+    div[data-testid="stMetric"] {
+        background: rgba(17, 19, 23, 0.8) !important;
+        border: 1px solid #1F2226 !important;
+        border-radius: 12px !important;
+        padding: 12px 20px !important;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1) !important;
+        transition: transform 0.3s ease, border-color 0.3s ease;
+    }
+    div[data-testid="stMetric"]:hover {
+        transform: translateY(-2px);
+        border-color: #00E5FF !important;
+        box-shadow: 0 0 15px rgba(0, 229, 255, 0.1) !important;
+    }
+    /* Başlık ve Metin Renkleri */
+    h1, h2, h3, label {
+        color: #FFFFFF !important;
+        font-family: 'Inter', sans-serif !important;
+    }
+    /* Buton Tasarımı */
+    .stButton>button {
+        background: linear-gradient(135deg, #00E5FF 0%, #00B0FF 100%) !important;
+        color: #0A0B0D !important;
+        font-weight: bold !important;
+        border: none !important;
+        border-radius: 8px !important;
+        padding: 10px 24px !important;
+        box-shadow: 0 0 10px rgba(0, 229, 255, 0.2) !important;
+        transition: all 0.3s ease !important;
+    }
+    .stButton>button:hover {
+        box-shadow: 0 0 20px rgba(0, 229, 255, 0.5) !important;
+        transform: scale(1.02) !important;
+    }
+    /* Dataframe ve Tablo Görünümü */
+    .stDataFrame {
+        background-color: #111317 !important;
+        border: 1px solid #1F2226 !important;
+        border-radius: 12px !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
+# ==========================================
+# 🏛️ INSTITUTIONAL SETTINGS & RISK MATRIX
+# ==========================================
 TOKEN = os.environ.get("TELEGRAM_TOKEN", "8834309699:AAEjA7F4OmbIQHfd9769Lz640GweHPYoStI")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "1183450421")
 
@@ -24,6 +80,7 @@ BASE_RISK_PERCENT = 0.50
 MIN_SCORE = 7.0
 MAX_SIMULTANEOUS_TRADES = 2
 
+# Evrensel Mikroyapı Enstrüman Matrisi
 instrument_specs = {
     "EURUSD": {"ticker": "EURUSD=X", "spread": 0.00008, "multiplier": 100000, "digits": 5},
     "GBPUSD": {"ticker": "GBPUSD=X", "spread": 0.00010, "multiplier": 100000, "digits": 5},
@@ -106,7 +163,7 @@ def build_features(df):
     return df.dropna().reset_index(drop=True)
 
 # ==========================================
-# 🧠 ADVANCED MARKET REGIME CLASSIFIER
+# 🧠 MARKET REGIME CLASSIFIER
 # ==========================================
 def classify_market_regime(df, i):
     if i < 50: return "CHOP"
@@ -120,7 +177,7 @@ def classify_market_regime(df, i):
     return "CHOP"
 
 # ==========================================
-# 💸 TRADE QUALITY SCORING SYSTEM (0-10)
+# 💸 QUALITY SCORING SYSTEM (0-10)
 # ==========================================
 def calculate_trade_quality(row, prob, regime):
     score = 5.0
@@ -141,11 +198,11 @@ def calculate_equity_slope():
     return np.polyfit(x, y, 1)[0]
 
 # ==========================================
-# 📡 TELEGRAM REAL-TIME SIGNAL ROUTER
+# 📡 TELEGRAM ROUTER
 # ==========================================
 def send_telegram_broadcast(pair, direction, entry, sl, tp, lot, regime, risk, q_score):
     ondalik = 5 if "USD" in pair or "GBP" in pair else 2
-    mesaj = f"""%0A🏛️ NEXUS v36.0 CANLI ALARM %0A━━━━━━━━━━━━━━%0A🎯 Instrument: {pair}%0A📈 Yön: {direction}%0A🌐 Piyasa Rejimi: {regime}%0A🔥 Kalite Skoru: {q_score:.1f}/10%0A⚖️ Dinamik Risk: %{risk:.2f}%0A%0A🎯 Canlı Giriş: {entry:.{ondalik}f}%0A🛑 Canlı SL: {sl:.{ondalik}f} | 🎯 Canlı TP: {tp:.{ondalik}f}%0A⚖️ Pozisyon Lot: {lot:.2f}"""
+    mesaj = f"""%0A🏛️ NEXUS v37.0 PREMIUM SIGNAL %0A━━━━━━━━━━━━━━%0A🎯 Instrument: {pair}%0A📈 Yön: {direction}%0A🌐 Piyasa Rejimi: {regime}%0A🔥 Kalite Skoru: {q_score:.1f}/10%0A%0A🎯 Giriş: {entry:.{ondalik}f}%0A🛑 SL: {sl:.{ondalik}f} | 🎯 TP: {tp:.{ondalik}f}%0A⚖️ Pozisyon Lot: {lot:.2f}"""
     try:
         url = f"https://api.telegram.org/bot{TOKEN}/sendMessage?chat_id={CHAT_ID}&text={mesaj}&parse_mode=Markdown"
         requests.get(url, timeout=5)
@@ -153,7 +210,7 @@ def send_telegram_broadcast(pair, direction, entry, sl, tp, lot, regime, risk, q
         pass
 
 # ==========================================
-# 📈 PORTFOLIO PIPELINE & EXECUTION MOTOR
+# 📈 PORTFOLIO PIPELINE & MOTOR
 # ==========================================
 def run_portfolio_pipeline():
     features = ["vol", "trend", "candle_strength", "volume_z", "vol_regime", "killzone_active"]
@@ -174,9 +231,7 @@ def run_portfolio_pipeline():
         model = xgb.XGBClassifier(n_estimators=100, max_depth=4, learning_rate=0.05, random_state=42, eval_metric="logloss")
         model.fit(df[features].iloc[:split], df["target"].iloc[:split])
         
-        # DÜZELTME: Döngüyü geçmişe doğru yürütmüyoruz, SADECE EN SON CANLI mumu (len(df) - 1) sorguluyoruz abi!
         i = len(df) - 1
-        
         regime = classify_market_regime(df, i)
         if regime == "CHOP": continue
         
@@ -190,10 +245,8 @@ def run_portfolio_pipeline():
         q_score = calculate_trade_quality(df.iloc[i], prob, regime)
         if q_score < MIN_SCORE: continue
             
-        # Anti-Spam: Aynı mum zaman damgasında aynı parite için mükerrer sinyal engeli abi
         sig_uid = f"{name}-{df['datetime'].iloc[i].strftime('%H:%M')}-{direction}"
-        if sig_uid in st.session_state.sent_signals_cache:
-            continue
+        if sig_uid in st.session_state.sent_signals_cache: continue
             
         candidate_signals.append({
             "index_t": i, "pair": name, "dir": direction, "q_score": q_score, "regime": regime, "df": df, "specs": specs, "uid": sig_uid
@@ -215,7 +268,7 @@ def run_portfolio_pipeline():
     st.session_state.last_execution_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 # ==========================================
-# ⚙️ MULTI-ASSET MICROSTRUCTURE COST ENGINE
+# ⚙️ MİKROYAPI EMİR YÜRÜTME MOTORU
 # ==========================================
 def execute_portfolio_matrix(approved_trades):
     if not approved_trades or st.session_state.system_locked: return
@@ -224,10 +277,8 @@ def execute_portfolio_matrix(approved_trades):
     peak = st.session_state.global_peak
     all_logs = st.session_state.execution_logs
     
-    wins = st.session_state.total_wins
-    losses = st.session_state.total_losses
-    gross_p = st.session_state.gross_profit
-    gross_l = st.session_state.gross_loss
+    wins, losses = st.session_state.total_wins, st.session_state.total_losses
+    gross_p, gross_l = st.session_state.gross_profit, st.session_state.gross_loss
     
     for trade in approved_trades:
         df, i, specs, name = trade["df"], trade["index_t"], trade["specs"], trade["pair"]
@@ -285,7 +336,6 @@ def execute_portfolio_matrix(approved_trades):
             "order_id": f"NX-{int(time.time())}-{name}", "timestamp": df['datetime'].iloc[i].strftime("%m-%d %H:%M"), "pair": name, "direction": trade["dir"], "entry": round(entry, specs["digits"]), "sl": round(sl, specs["digits"]), "tp": round(tp, specs["digits"]), "lot_size": lot, "spread_multiplier": f"x{spread_multiplier:.1f}", "quality_score": round(trade["q_score"], 1), "result": trade_result
         })
         
-        # Sinyal gönderildi hafızasına mühürlüyoruz abi
         st.session_state.sent_signals_cache.append(trade["uid"])
         send_telegram_broadcast(name, trade["dir"], entry, sl, tp, lot, trade["regime"], current_risk_pct, trade["q_score"])
 
@@ -303,46 +353,62 @@ def execute_portfolio_matrix(approved_trades):
         }
 
 # ==========================================
+# 🌍 APP BANNER & HEADER
+# ==========================================
+st.markdown("<h1 style='text-align: left; font-size: 28px; margin-bottom: 0px;'>🏛️ NEXUS QUANT v37.0</h1>", unsafe_allow_html=True)
+st.markdown("<p style='color: #6C727F; font-size: 13px; margin-top: 2px; margin-bottom: 25px;'>Premium Institutional Sandbox & Strategy Desk</p>", unsafe_allow_html=True)
+
+# ⚠️ HIGH IMPACT USD NEWS BANNER
+st.markdown("""
+    <div style='background: linear-gradient(90deg, rgba(255,59,48,0.15) 0%, rgba(0,0,0,0) 100%); border: 1px solid rgba(255,59,48,0.3); border-radius: 10px; padding: 12px; mb-6; margin-bottom: 25px;'>
+        <span style='color: #FF3B30; font-weight: bold;'>⚠️ RISK WARNING:</span> 
+        <span style='color: #FF9500; font-size: 13px;'>High-Impact Macro Economic Events Detected In Session Window. Wide Spreads Enforced.</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+# ==========================================
 # AUTOMATED LOOP MERKEZİ (30 DAKİKA)
 # ==========================================
-st.sidebar.subheader("🔄 Otonom Sürüş Kontrolü")
-autopilot_active = st.sidebar.toggle("🤖 30-Dakika Otomatik Pilotu Çalıştır", value=True)
+st.sidebar.markdown("<h3 style='font-size: 16px;'>🤖 AUTO-PILOT CONTROL</h3>", unsafe_allow_html=True)
+autopilot_active = st.sidebar.toggle("30-Min Async Autopilot Loop", value=True)
 
 if autopilot_active:
-    st.sidebar.info(f"🤖 Otomatik Pilot Aktif! Son Tarama: {st.session_state.last_execution_time}")
+    st.sidebar.info(f"● ENGINE ACTIVE\nLast Search: {st.session_state.last_execution_time}")
     run_portfolio_pipeline()
     time.sleep(1800)
     st.rerun()
 else:
-    st.sidebar.warning("⏸️ Otomatik Pilot Durduruldu.")
-    if st.button("🚀 MANUEL TARAMA YAP"):
+    st.sidebar.warning("● ENGINE PAUSED (MANUAL MODE)")
+    if st.button("🚀 EXECUTE ONE-WAY TARAMA"):
         run_portfolio_pipeline()
 
 # ==========================================
-# DASHBOARD OUTPUT DISPLAY
+# 📊 PREMIUM METRICS AREA
 # ==========================================
 if st.session_state.dashboard_metrics:
-    metrics = st.session_state.dashboard_metrics
-    col_d1, col_d2, col_d3, col_d4 = st.columns(4)
-    col_d1.metric("💰 Canlı Bakiye (Equity)", f"${st.session_state.global_equity:.2f}")
-    col_d2.metric("🎯 Win Rate", metrics["wr"])
-    col_d3.metric("💎 Profit Factor", metrics["pf"])
-    col_d4.metric("🛑 Drawdown Rate", f"%{metrics['dd']}")
+    m = st.session_state.dashboard_metrics
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Live Equity Balance", f"${st.session_state.global_equity:.2f}", delta=f"${st.session_state.global_equity - INITIAL_CAPITAL:.2f}")
+    c2.metric("Hit Rate (Win Rate)", m["wr"])
+    c3.metric("Profit Factor", m["pf"])
+    c4.metric("Max Drawdown Rate", f"%{m['dd']}")
 
-st.write("---")
-st.subheader("📈 Sermaye Gelişim Eğrisi")
-st.line_chart(pd.DataFrame({"Global Kasa ($)": st.session_state.equity_history}))
+# 📈 GRAPHIC INTERACTIVE AREA
+st.markdown("<h3 style='font-size: 18px; margin-top: 25px;'>📈 Equity Curve Growth Path</h3>", unsafe_allow_html=True)
+st.line_chart(pd.DataFrame({"Global Account Value ($)": st.session_state.equity_history}))
 
+# AUDIT LOG TABLE
 if st.session_state.execution_logs:
-    st.write("---")
-    st.subheader("🏛️ Onaylanan Elit Emirler Log Listesi")
+    st.markdown("<h3 style='font-size: 18px; margin-top: 25px;'>🏛️ Institutional Ledger Audit Logs</h3>", unsafe_allow_html=True)
     st.dataframe(pd.DataFrame(st.session_state.execution_logs), use_container_width=True)
 
 # HARD RESET
-if st.sidebar.button("🔄 Belleği Sıfırla"):
+st.sidebar.markdown("<br><br>", unsafe_allow_html=True)
+if st.sidebar.button("🔄 Hard Reset Platform Memory"):
     st.session_state.global_equity = INITIAL_CAPITAL
     st.session_state.global_peak = INITIAL_CAPITAL
     st.session_state.equity_history = [INITIAL_CAPITAL, INITIAL_CAPITAL, INITIAL_CAPITAL, INITIAL_CAPITAL]
+    st.session_state.slope_history = [0.0, 0.0]
     st.session_state.dashboard_metrics = {}; st.session_state.execution_logs = []
     st.session_state.total_wins = 0; st.session_state.total_losses = 0
     st.session_state.gross_profit = 0.0; st.session_state.gross_loss = 0.0
