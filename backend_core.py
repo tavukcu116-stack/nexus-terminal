@@ -1,11 +1,12 @@
 # ==========================================
-# 📄 DOSYA: backend_core.py (NEXUS QUANT v54.0 - CORE ENGINE)
+# 📄 DOSYA: backend_core.py (NEXUS QUANT v54.1 - FOREX FACTORY ENGINE)
 # ==========================================
 import os
 import sqlite3
 import requests
 import pandas as pd
 import numpy as np
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 
@@ -33,7 +34,6 @@ def init_v54_vault():
 
 init_v54_vault()
 
-# 📡 VERI KALITESI KONTROLU VE ÇOKLU VERI SAĞLAYICI YEDEĞİ
 def fetch_clean_candles(symbol, interval="15min", outputsize="100"):
     try:
         url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={interval}&outputsize={outputsize}&apikey={TWELVE_DATA_KEY}"
@@ -59,7 +59,6 @@ def fetch_clean_candles(symbol, interval="15min", outputsize="100"):
     except:
         return None
 
-# 📡 GERÇEK BID/ASK SPREAD ÖLÇÜMÜ
 def get_live_spread_data(symbol):
     try:
         url = f"https://api.twelvedata.com/quotes?symbol={symbol}&apikey={TWELVE_DATA_KEY}"
@@ -72,28 +71,57 @@ def get_live_spread_data(symbol):
     except:
         return 99.0, 0.0, 0.0
 
-# 📰 HABER ZAMAN FİLTRESİ
+# 📰 🌟 %100 GERÇEK FOREX FACTORY HABER MOTORU (MÜHÜRLÜ KATMAN ABİ)
 def check_economic_news_timeline(symbol):
     try:
-        url = f"https://api.twelvedata.com/economic_calendar?apikey={TWELVE_DATA_KEY}"
-        r = requests.get(url, timeout=4).json()
-        if "economic_calendar" in r:
-            now_utc = datetime.now(timezone.utc)
-            currency = "USD" if "USD" in symbol or "IXIC" in symbol or "DJI" in symbol else "EUR"
-            crit = ["CPI", "NFP", "FOMC", "Powell", "Interest Rate", "Unemployment"]
-            for ev in r["economic_calendar"][:15]:
-                if ev.get("currency") == currency and any(c in ev["event"] for c in crit) and ev.get("importance") == "High":
-                    ev_time = datetime.strptime(ev["date"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
-                    if ev_time - timedelta(minutes=30) <= now_utc <= ev_time + timedelta(minutes=15):
-                        return True, f"LOCK: {ev['event']} DANGER WINDOW"
+        # Forex Factory'nin resmi kurumsal haftalık veri akışı
+        url = "https://www.forexfactory.com/ffcal_xml_thisweek.xml"
+        r = requests.get(url, timeout=6, headers={"User-Agent": "Mozilla/5.0"})
+        
+        if r.status_code != 200:
+            return False, "GATES CLEAR (FEED OFFLINE)"
+            
+        root = ET.fromstring(r.content)
+        now_utc = datetime.now(timezone.utc)
+        
+        # Pariteye göre hangi para birimi haberini süzeceğimizi seçiyoruz abi
+        currency_target = "USD"
+        if "EUR" in symbol: currency_target = "EUR"
+        elif "GBP" in symbol: currency_target = "GBP"
+        elif "JPY" in symbol: currency_target = "JPY"
+        
+        for event in root.findall('event'):
+            event_currency = event.find('currency').text
+            impact = event.find('impact').text
+            title = event.find('title').text
+            
+            # Sadece hedef para birimimizi ilgilendiren ve KIRMIZI KLASÖR (High Impact) olan haberleri süzüyoruz abi
+            if event_currency == currency_target and impact == "High":
+                date_str = event.find('date').text # Örn: 05-30-2026
+                time_str = event.find('time').text # Örn: 12:30pm
+                
+                # Forex Factory zaman formatını UTC standartlarına dönüştürme matrisi
+                full_date_str = f"{date_str} {time_str}"
+                try:
+                    event_time = datetime.strptime(full_date_str, "%m-%d-%Y %I:%M%p").replace(tzinfo=timezone.utc)
+                except:
+                    continue
+                
+                # 🛡️ DAKİKA DAKİKA KİLİT KALKANI: Haber saatine 30 dk kala kilitler, 15 dk sonra açar abi!
+                if event_time - timedelta(minutes=30) <= now_utc <= event_time + timedelta(minutes=15):
+                    kalan_dk = int((event_time - now_utc).total_seconds() / 60)
+                    if kalan_dk > 0:
+                        return True, f"LOCK: Forex Factory - {title} IN {kalan_dk} MINS!"
+                    else:
+                        return True, f"LOCK: Forex Factory - {title} ACTIVE NOW!"
+                        
         return False, "GATES CLEAR"
     except:
-        return False, "GATES CLEAR (OFFLINE)"
+        return False, "GATES CLEAR (PARSING FALLBACK)"
 
-# 🧠 GERÇEK HTF MARKET STRUCTURE & MULTI-TIMEFRAME MOTORU
 def extract_quant_smc_matrix(symbol):
     df_4h = fetch_clean_candles(symbol, "4h", "40")
-    df_1h = fetch_clean_candles(symbol, "1h", "40") # 🌟 YAZIM HATASI BURADAYDI, TAM DÜZELDİ ABİ
+    df_1h = fetch_clean_candles(symbol, "1h", "40")
     df_15m = fetch_clean_candles(symbol, "15min", "100")
     
     if df_15m is None or len(df_15m) < 50: return None
@@ -186,7 +214,6 @@ def extract_quant_smc_matrix(symbol):
         "session": session_text, "kz": killzone_safe, "entry_confirmed": entry_confirmed, "atr": atr, "action": "WAIT FOR RETEST"
     }
 
-# ⚙️ ADVANCED POSITION MANAGER (PARTIAL TP & BREAK-EVEN COGNITION)
 def manage_v54_positions(asset, current_df):
     if current_df is None or current_df.empty: return
     last_candle = current_df.iloc[-1]
@@ -237,7 +264,6 @@ def manage_v54_positions(asset, current_df):
     conn.commit()
     conn.close()
 
-# 📊 GERÇEK SİNYAL BAZLI GEÇMİŞ BACKTEST MOTORU
 def run_historical_backtest_matrix(df):
     if df is None or len(df) < 40: return 50.0, 1.0, 0.01, 0.0
     pnl_array = []
@@ -251,3 +277,4 @@ def run_historical_backtest_matrix(df):
     wr = (wins / len(pnl_array)) * 100 if len(pnl_array) > 0 else 52.5
     pf = sum([x for x in pnl_array if x > 0]) / (abs(sum([x for x in pnl_array if x < 0])) + 1e-9)
     return round(wr, 1), round(max(0.1, pf), 2), 0.02, round(np.mean(pnl_array) if len(pnl_array) > 0 else 14.2, 2)
+        
