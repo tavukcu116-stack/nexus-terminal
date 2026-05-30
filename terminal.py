@@ -1,5 +1,5 @@
 # ==========================================
-# 📄 DOSYA: terminal.py (NEXUS QUANT v49.0 - REAL INSTITUTIONAL NODE)
+# 📄 DOSYA: terminal.py (NEXUS QUANT v49.0 - COGNITIVE FIXED)
 # ==========================================
 import streamlit as st
 import pandas as pd
@@ -228,10 +228,11 @@ def render_institutional_terminal(m_name, symbol):
         </div>
         """, unsafe_allow_html=True)
         
-        trade_mode = st.checkbox("Paper Trading Mode Active", value=True)
+        # ✅ ÇAKIŞMA KORUMASI: Her sekme için benzersiz 'key' atandı abi
+        trade_mode = st.checkbox("Paper Trading Mode Active", value=True, key=f"paper_mode_{m_name}")
         
         if smc["bias"] != "WAIT" and trade_mode:
-            if st.button(f"Mühürle / Execute {smc['bias']}", key=f"exec_{m_name}"):
+            if st.button(f"Mühürle / Execute {smc['bias']}", key=f"exec_btn_{m_name}"):
                 pnl = 250.0 if datetime.now().second % 2 == 0 else -120.0
                 st.session_state.journal_db.append({
                     "Timestamp": datetime.now().strftime("%H:%M:%S"), "Asset": m_name, "Type": smc["bias"], "Entry": smc["entry"], "Result": pnl
@@ -243,11 +244,14 @@ def render_institutional_terminal(m_name, symbol):
         df_j = pd.DataFrame(st.session_state.journal_db)
         
         if not df_j.empty:
-            wins = len(df_j[df_j["Result"] > 0])
-            winrate = (wins / len(df_j)) * 100
-            st.metric("Winrate Factor", f"%{winrate:.1f}")
-            st.metric("Simulated Account", f"${st.session_state.paper_balance:.2f}")
-            st.dataframe(df_j.tail(3), use_container_width=True)
+            # Sadece bu pariteye ait olan geçmişi süzüyoruz abi
+            df_asset = df_j[df_j["Asset"] == m_name]
+            if not df_asset.empty:
+                wins = len(df_asset[df_asset["Result"] > 0])
+                winrate = (wins / len(df_asset)) * 100
+                st.metric("Winrate Factor", f"%{winrate:.1f}", key=f"wr_{m_name}")
+            st.metric("Simulated Account", f"${st.session_state.paper_balance:.2f}", key=f"bal_metric_{m_name}")
+            st.dataframe(df_j.tail(3), use_container_width=True, key=f"df_view_{m_name}")
         else:
             st.caption("Journal ledger is vacant.")
 
@@ -265,3 +269,4 @@ t_eur, t_gold = st.tabs(["EUR/USD", "XAU/USD (Gold)"])
 
 with t_eur: render_institutional_terminal("EUR/USD", ticker_map["EUR/USD"])
 with t_gold: render_institutional_terminal("XAU/USD (Gold)", ticker_map["XAU/USD (Gold)"])
+        
