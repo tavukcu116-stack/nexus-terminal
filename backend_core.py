@@ -20,7 +20,6 @@ def get_db_connection():
 def init_v54_vault():
     conn = get_db_connection()
     cursor = conn.cursor()
-    # 9) Setup Arşivleme, 11) Seans ve 20) Analitik Destekli Gelişmiş Şema
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS v54_ledger (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -34,7 +33,7 @@ def init_v54_vault():
 
 init_v54_vault()
 
-# 📡 5) VERI KALITESI KONTROLU VE ÇOKLU VERI SAĞLAYICI YEDEĞİ
+# 📡 VERI KALITESI KONTROLU VE ÇOKLU VERI SAĞLAYICI YEDEĞİ
 def fetch_clean_candles(symbol, interval="15min", outputsize="100"):
     try:
         url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={interval}&outputsize={outputsize}&apikey={TWELVE_DATA_KEY}"
@@ -43,13 +42,11 @@ def fetch_clean_candles(symbol, interval="15min", outputsize="100"):
         df = pd.DataFrame(r["values"])
         for col in ["open", "high", "low", "close"]: df[col] = df[col].astype(float)
         df['datetime'] = pd.to_datetime(df['datetime'])
-        # Eksik mum ve bozuk timestamp kontrolü
         df = df.dropna().drop_duplicates(subset=["datetime"])
         return df.iloc[::-1].reset_index(drop=True)
     except:
         pass
 
-    # Fallback Backup Provider: Binance Gateway
     try:
         b_sym = symbol.replace("/", "").upper() + "T" if "USD" in symbol else "EURUSDT"
         url = f"https://api.binance.com/api/v3/klines?symbol={b_sym}&interval=15m&limit={outputsize}"
@@ -62,20 +59,20 @@ def fetch_clean_candles(symbol, interval="15min", outputsize="100"):
     except:
         return None
 
-# 📡 3) GERÇEK BID/ASK SPREAD ÖLÇÜMÜ
+# 📡 GERÇEK BID/ASK SPREAD ÖLÇÜMÜ
 def get_live_spread_data(symbol):
     try:
         url = f"https://api.twelvedata.com/quotes?symbol={symbol}&apikey={TWELVE_DATA_KEY}"
         r = requests.get(url, timeout=4).json()
         if "bid" in r and "ask" in r:
             bid, ask = float(r["bid"]), float(r["ask"])
-            mult = 10 if "XAU" in symbol or "BTC" in symbol or "ETH" in symbol else 10000
-            return round(abs(ask - bid) * mult, 2), bid, ask
+            multiplier = 10 if "XAU" in symbol or "BTC" in symbol or "ETH" in symbol else 10000
+            return round(abs(ask - bid) * multiplier, 2), bid, ask
         return 99.0, 0.0, 0.0
     except:
         return 99.0, 0.0, 0.0
 
-# 📰 4) HABER ZAMAN FİLTRESİ (30 Dk Önce / 15 Dk Sonra Dakika Dakika Kilit)
+# 📰 HABER ZAMAN FİLTRESİ
 def check_economic_news_timeline(symbol):
     try:
         url = f"https://api.twelvedata.com/economic_calendar?apikey={TWELVE_DATA_KEY}"
@@ -93,10 +90,10 @@ def check_economic_news_timeline(symbol):
     except:
         return False, "GATES CLEAR (OFFLINE)"
 
-# 🧠 1) GERÇEK HTF MARKET STRUCTURE & MULTI-TIMEFRAME MOTORU
+# 🧠 GERÇEK HTF MARKET STRUCTURE & MULTI-TIMEFRAME MOTORU
 def extract_quant_smc_matrix(symbol):
     df_4h = fetch_clean_candles(symbol, "4h", "40")
-    df_1h = fetch_verified_candles(symbol, "1h", "40") if 'fetch_verified_candles' in globals() else fetch_clean_candles(symbol, "1h", "40")
+    df_1h = fetch_clean_candles(symbol, "1h", "40") # 🌟 YAZIM HATASI BURADAYDI, TAM DÜZELDİ ABİ
     df_15m = fetch_clean_candles(symbol, "15min", "100")
     
     if df_15m is None or len(df_15m) < 50: return None
@@ -107,7 +104,6 @@ def extract_quant_smc_matrix(symbol):
     low_p = df_15m["low"].iloc[idx]
     atr = (df_15m["high"] - df_15m["low"]).rolling(14).mean().iloc[-1]
 
-    # 11) SEANS TANIMLARI
     current_hour = datetime.utcnow().hour
     london = (8 <= current_hour < 12)
     ny = (13 <= current_hour < 17)
@@ -115,7 +111,6 @@ def extract_quant_smc_matrix(symbol):
     killzone_safe = london or ny or overlap
     session_text = "LONDON" if london else "NEW YORK" if ny else "OVERLAP" if overlap else "ASIA"
 
-    # 1) GERÇEK HTF TREND BELİRLEME (HH-HL / LH-LL ve BOS Analizi)
     htf_structure = "WAIT"
     if df_4h is not None and len(df_4h) > 5:
         h4_highs = df_4h["high"].tail(5).values
@@ -123,13 +118,11 @@ def extract_quant_smc_matrix(symbol):
         if h4_highs[-1] > h4_highs[-2] and h4_lows[-1] > h4_lows[-2]: htf_structure = "BULLISH"
         elif h4_highs[-1] < h4_highs[-2] and h4_lows[-1] < h4_lows[-2]: htf_structure = "BEARISH"
 
-    # 16) LİKİDİTE HARİTASI (PDH, PDL, EQH, EQL Tespiti)
     pdh = df_15m["high"].max()
     pdl = df_15m["low"].min()
     eq_level = (pdh + pdl) / 2
     market_zone = "PREMIUM" if close_p > eq_level else "DISCOUNT"
 
-    # Swing Alan Bulma
     sh, sl = [], []
     for i in range(4, len(df_15m) - 4):
         if df_15m["high"].iloc[i] == max(df_15m["high"].iloc[i-4 : i+5]): sh.append(df_15m["high"].iloc[i])
@@ -138,36 +131,31 @@ def extract_quant_smc_matrix(symbol):
     last_sl = sl[-1] if sl else pdl
 
     sweep_detected = (high_p > last_sh and close_p < last_sh) or (low_p < last_sl and close_p > last_sl)
+    body_avg = abs(df_15m["close"] - df_15m["open"]).tail(20).mean()
     displacement = abs(close_p - df_15m["open"].iloc[idx]) > (df_15m["high"] - df_15m["low"]).rolling(20).mean().iloc[idx] * 1.5
 
     structure_type = "BOS BULLISH" if displacement and close_p > last_sh else "BOS BEARISH" if displacement and close_p < last_sl else "CHOCH REVERSAL" if sweep_detected else "RANGE"
 
-    # 5) FRESH VS MITIGATED ORDER BLOCK AYRIMI & 6) KURUMSAL FVG FİLTRESİ
     active_ob, active_fvg = None, None
     ob_points, fvg_points = 0, 0
     
     for i in range(idx-20, idx-1):
-        # Kurumsal FVG Filtresi: Sweep + Displacement + Minimum ATR Şartı
         gap_b = df_15m["low"].iloc[i+2] - df_15m["high"].iloc[i]
         if gap_b > (atr * 0.5) and displacement and sweep_detected:
             active_fvg = {"type": "BULLISH FVG", "top": df_15m["low"].iloc[i+2], "bottom": df_15m["high"].iloc[i], "time": df_15m["datetime"].iloc[i+1]}
             fvg_points = 15
 
-        # Fresh vs Mitigated OB Ayrımı
         if df_15m["close"].iloc[i] < df_15m["open"].iloc[i] and df_15m["close"].iloc[i+1] > df_15m["open"].iloc[i+1]:
             ob_top, ob_bottom = df_15m["high"].iloc[i], df_15m["low"].iloc[i]
-            # Sonraki mumlar bu bölgeyi test etti mi? (Mitigation Kontrolü)
             future_lows = df_15m["low"].iloc[i+2:idx+1]
             is_fresh = not (future_lows < ob_top).any() if len(future_lows) > 0 else True
             
             active_ob = {"type": "BULLISH OB", "top": ob_top, "bottom": ob_bottom, "time": df_15m["datetime"].iloc[i], "fresh": is_fresh}
-            ob_points = 25 if is_fresh else 10  # Fresh bölgelere ek +15 kalite puanı abi!
+            ob_points = 25 if is_fresh else 10
 
-    # 2) LTF ENTRY CONFIRMATION (Engulfing veya Hacimli İvme Şartı)
     engulf = (close_p > df_15m["open"].iloc[idx] and df_15m["close"].iloc[idx-1] < df_15m["open"].iloc[idx-1])
     entry_confirmed = (displacement or engulf) and sweep_detected
 
-    # 7) KALITE DERECELENDIRME MOTORU (Puanlama Algoritması)
     score = 0
     if htf_structure != "WAIT": score += 20
     if sweep_detected: score += 15
@@ -188,7 +176,6 @@ def extract_quant_smc_matrix(symbol):
     elif htf_structure == "BEARISH" and market_zone == "PREMIUM" and q_class != "WAIT":
         bias = "SELL"; sl_p = last_sh + (atr * 0.2); tp1_p = eq_level; tp2_p = last_sl
 
-    # 7) MINIMUM RR >= 2.0 KURALI (2'nin altındakileri acımadan ele abi)
     rr = abs(close_p - tp2_p) / (abs(close_p - sl_p) + 1e-9)
     if rr < 2.0: bias = "WAIT"; q_class = "WAIT"
 
@@ -196,7 +183,7 @@ def extract_quant_smc_matrix(symbol):
         "df": df_15m, "price": close_p, "pdh": pdh, "pdl": pdl, "eq": eq_level, "zone": market_zone,
         "sh": last_sh, "sl": last_sl, "bias": bias, "structure": structure_type, "ob": active_ob, "fvg": active_fvg,
         "sl_p": sl_p, "tp1_p": tp1_p, "tp2_p": tp2_p, "rr": rr, "score": score, "q_class": q_class,
-        "session": session_text, "kz": killzone_safe, "entry_confirmed": entry_confirmed, "atr": atr
+        "session": session_text, "kz": killzone_safe, "entry_confirmed": entry_confirmed, "atr": atr, "action": "WAIT FOR RETEST"
     }
 
 # ⚙️ ADVANCED POSITION MANAGER (PARTIAL TP & BREAK-EVEN COGNITION)
@@ -217,15 +204,17 @@ def manage_v54_positions(asset, current_df):
         status = "OPEN"
         mult = 100 if "Gold" in asset or "BTC" in asset or "ETH" in asset else 10000
         
-        # 18) SETUP GECERLILIK SÜRESI: 40 mum boyunca hedefe gitmediyse otonom iptal et abi!
         fmt = "%Y-%m-%d %H:%M"
-        time_delta = datetime.now() - datetime.strptime(ts, fmt)
-        if time_delta.total_seconds() / 60 > 600: # 600 Dakika = 40 adet 15M mumu
-            closed = True; pnl = (cp - entry) * lot * mult; status = "EXPIRED_CANCEL"
+        try:
+            time_delta = datetime.now() - datetime.strptime(ts, fmt)
+            if time_delta.total_seconds() / 60 > 600:
+                closed = True; pnl = (cp - entry) * lot * mult; status = "EXPIRED_CANCEL"
+        except:
+            pass
 
         if t_type == "BUY" and not closed:
             if last_candle["high"] >= tp1 and sl < entry:
-                sl = entry # Kısmi kâr alındı, stop girişe mühürlendi!
+                sl = entry
                 cursor.execute("UPDATE v54_ledger SET sl = ?, pnl = pnl + ? WHERE id = ?", (sl, (tp1 - entry) * (lot/2) * mult, t_id))
             if last_candle["low"] <= sl:
                 closed = True; pnl = (sl - entry) * (lot/2 if sl == entry else lot) * mult; status = "CLOSED_SL"
@@ -242,13 +231,13 @@ def manage_v54_positions(asset, current_df):
                 closed = True; pnl = (entry - tp2) * (lot/2 if sl == entry else lot) * mult; status = "CLOSED_TP"
                 
         if closed:
-            dur = int(time_delta.total_seconds() / 60)
+            dur = int(time_delta.total_seconds() / 60) if 'time_delta' in locals() else 0
             cursor.execute("UPDATE v54_ledger SET pnl = pnl + ?, status = ?, duration_min = ?, close_time = ? WHERE id = ?", (pnl, status, dur, datetime.now().strftime("%Y-%m-%d %H:%M"), t_id))
             
     conn.commit()
     conn.close()
 
-# 📊 10) GERÇEK SİNYAL BAZLI GEÇMİŞ BACKTEST MOTORU
+# 📊 GERÇEK SİNYAL BAZLI GEÇMİŞ BACKTEST MOTORU
 def run_historical_backtest_matrix(df):
     if df is None or len(df) < 40: return 50.0, 1.0, 0.01, 0.0
     pnl_array = []
@@ -262,4 +251,3 @@ def run_historical_backtest_matrix(df):
     wr = (wins / len(pnl_array)) * 100 if len(pnl_array) > 0 else 52.5
     pf = sum([x for x in pnl_array if x > 0]) / (abs(sum([x for x in pnl_array if x < 0])) + 1e-9)
     return round(wr, 1), round(max(0.1, pf), 2), 0.02, round(np.mean(pnl_array) if len(pnl_array) > 0 else 14.2, 2)
-            
