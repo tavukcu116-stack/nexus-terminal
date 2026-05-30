@@ -28,6 +28,20 @@ def init_enterprise_db():
 
 init_enterprise_db()
 
+# 📡 VERİ AKIŞ MOTORU (Eksik olan ve hataya sebep olan kritik fonksiyon abi)
+def fetch_raw_market_candles(symbol, interval="15min", outputsize="80"):
+    try:
+        url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={interval}&outputsize={outputsize}&apikey={TWELVE_DATA_KEY}"
+        r = requests.get(url, timeout=7, headers={"User-Agent": "Mozilla"}).json()
+        if "values" not in r: return None
+        df = pd.DataFrame(r["values"])
+        for col in ["open", "high", "low", "close"]: 
+            df[col] = df[col].astype(float)
+        df['datetime'] = pd.to_datetime(df['datetime'])
+        return df.iloc[::-1].reset_index(drop=True)
+    except:
+        return None
+
 def check_macro_news_impact():
     try:
         url = f"https://api.twelvedata.com/economic_calendar?apikey={TWELVE_DATA_KEY}"
@@ -128,4 +142,3 @@ def manage_enterprise_positions(asset, current_df):
             
     conn.commit()
     conn.close()
-  
