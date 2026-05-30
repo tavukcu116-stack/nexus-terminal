@@ -8,4 +8,4 @@ numpy
 xgboost
 plotly
 streamlit-autorefresh
-
+python-dotenv
