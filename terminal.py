@@ -309,4 +309,3 @@ def render_institutional_terminal(m_name, symbol):
 # Sekme Montaj Kökleri
 with t_eur: render_institutional_terminal("EUR/USD", ticker_map["EUR/USD"])
 with t_gold: render_institutional_terminal("XAU/USD (Gold)", ticker_map["XAU/USD (Gold)"])
-    
