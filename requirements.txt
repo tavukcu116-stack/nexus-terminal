@@ -1,4 +1,4 @@
-streamlit
+Streamlit
 requests
 beautifulsoup4
 pytz
@@ -6,5 +6,6 @@ schedule
 pandas
 numpy
 xgboost
-redis
-websockets
+plotly
+streamlit-autorefresh
+
