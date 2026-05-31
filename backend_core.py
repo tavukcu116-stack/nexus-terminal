@@ -124,7 +124,7 @@ def check_economic_news_timeline(symbol):
 
 def extract_quant_smc_matrix(symbol):
     df_4h = fetch_clean_candles(symbol, "4h", "40")
-    df_1h = fetch_clean_candles(symbol, "1h", "40") # 🌟 YAZIM HATASI BURADAYDI, TAMAMEN TEMİZLENDİ ABİ
+    df_1h = fetch_clean_candles(symbol, "1h", "40")
     df_15m = fetch_clean_candles(symbol, "15min", "100")
     
     if df_15m is None or len(df_15m) < 50: return None
@@ -161,7 +161,8 @@ def extract_quant_smc_matrix(symbol):
     last_sh = sh[-1] if sh else pdh
     last_sl = sl[-1] if sl else pdl
 
-    sweep_detected = (high_p > last_sh and close_p < last_sh) or (low_p < last_sl steer and close_p > last_sl)
+    # 🌟 "steer" HATASI BURADAYDI, TAMAMEN TEMİZLENDİ ABİ:
+    sweep_detected = (high_p > last_sh and close_p < last_sh) or (low_p < last_sl and close_p > last_sl)
     body_avg = abs(df_15m["close"] - df_15m["open"]).tail(20).mean()
     displacement = abs(close_p - df_15m["open"].iloc[idx]) > (df_15m["high"] - df_15m["low"]).rolling(20).mean().iloc[idx] * 1.5
 
@@ -285,3 +286,4 @@ def run_historical_backtest_matrix(df):
     wr = (wins / len(pnl_array)) * 100 if len(pnl_array) > 0 else 52.5
     pf = sum([x for x in pnl_array if x > 0]) / (abs(sum([x for x in pnl_array if x < 0])) + 1e-9)
     return round(wr, 1), round(max(0.1, pf), 2), 0.02, round(np.mean(pnl_array) if len(pnl_array) > 0 else 14.2, 2)
+    
