@@ -1,3 +1,4 @@
+
 # ==========================================
 # 📄 DOSYA: terminal.py (NEXUS QUANT v54.6 - ENTERPRISE UI INTERFACE)
 # ==========================================
@@ -120,7 +121,7 @@ else:
             increasing_line_color='#26a69a', decreasing_line_color='#ef5350',
             increasing_fillcolor='#26a69a', decreasing_fillcolor='#ef5350', name=render_asset
         ))
-        fig.update_traces(whiskerwidth=0.3) # Fitil kalınlık optimizasyonu abi
+        fig.update_traces(whiskerwidth=0.3)
         
         # Premium / Discount Akıllı Swing Alan Görsel Overlay Katmanları
         fig.add_hrect(y0=node['eq'], y1=node['pdh'], fillcolor="rgba(239, 83, 80, 0.015)", line_width=0, annotation_text="HTF PREMIUM AREA", annotation_position="top left")
@@ -139,7 +140,7 @@ else:
             fvg_color = "rgba(41, 98, 255, 0.04)" if "BULLISH" in node["fvg"]["type"] else "rgba(255, 109, 0, 0.04)"
             fig.add_shape(type="rect", x0=node["fvg"]["time"], x1=df['datetime'].iloc[-1], y0=node["fvg"]["bottom"], y1=node["fvg"]["top"], fillcolor=fvg_color, line_width=0)
 
-        # Eğer kurallar eşleştiyse hedefleri grafiğe mühürle abi
+        # Hedefleri grafiğe mühürle abi
         if node["bias"] != "WAIT":
             fig.add_hline(y=node["sl_p"], line_color="#ef5350", line_width=1.5, line_dash="dash", annotation_text="SL LIMIT")
             fig.add_hline(y=node["tp2_p"], line_color="#26a69a", line_width=1.5, line_dash="dash", annotation_text="TP2 FINAL")
@@ -186,7 +187,7 @@ else:
         </div>
         """, unsafe_allow_html=True)
         
-        # Mükerrer emir kalkanı taraması abi
+        # Mükerrer emir kalkanı
         cursor.execute("SELECT COUNT(*) FROM v54_ledger WHERE asset = ? AND status = 'OPEN'", (render_asset,))
         active_trade_count = cursor.fetchone()[0]
         
@@ -195,7 +196,6 @@ else:
         # ==========================================
         if node["bias"] != "WAIT" and active_trade_count == 0 and not daily_circuit_lock and not total_circuit_lock and not correlation_blocked and not news_blocked:
             if st.button("MÜHÜRLE VE EMİR GÖNDER", key=f"btn_v54_execute_{render_asset}"):
-                # Analytics rasyolarının muhtaç olduğu ham dolar riski veritabanına mühürlenir abi!
                 calculated_risk_usd = abs(node["price"] - node["sl_p"]) * final_lot * mult_risk
                 
                 cursor.execute(
@@ -204,7 +204,7 @@ else:
                 )
                 conn.commit()
                 
-                # Telegram Embedded Bildirim Taslağı
+                # Telegram Embedded Bildirim Sistemi
                 tg_msg = (
                     f"🏛️ *NEXUS QUANT — SYSTEM EXECUTION DISPATCHED*\n\n"
                     f"🔹 *Asset:* {render_asset} ({node['session']} Session)\n"
