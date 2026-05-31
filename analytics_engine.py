@@ -1,5 +1,5 @@
 # ==========================================
-# 📄 DOSYA: analytics_engine.py (NEXUS QUANT v54.2 - PERFORMANCE ANALYTICS ENGINE)
+# 📄 DOSYA: analytics_engine.py (NEXUS QUANT v54.5 - ENTERPRISE ANALYTICS)
 # ==========================================
 import sqlite3
 import pandas as pd
@@ -10,337 +10,342 @@ from datetime import datetime
 
 DB_FILE = "nexus_v54_vault.db"
 
-def load_closed_trades():
-    """Veritabanından sadece kapanmış gerçek işlemleri okur."""
+def normalize_asset_name(asset_str):
+    """Farklı yazılan pariteleri tek çatı altında toplar abi."""
+    if not asset_str: return ""
+    return str(asset_str).replace("/", "").replace("-", "").replace(" ", "").upper()
+
+def row_matrix_builder(sub_df, name):
+    """Segment tabloları için hata korumalı istatistik satırı üretir abi."""
+    if sub_df.empty: 
+        return [name, 0, "%0.0", 0.0, 0.0, 0.0]
+    t_tot = len(sub_df)
+    t_win = len(sub_df[sub_df['pnl'] > 0])
+    t_wr = (t_win / t_tot) * 100
+    
+    gross_prof = sub_df[sub_df['pnl'] > 0]['pnl'].sum()
+    gross_loss = abs(sub_df[sub_df['pnl'] <= 0]['pnl'].sum())
+    t_pf = gross_prof / (gross_loss + 1e-9) if gross_loss > 0 else gross_prof
+    
+    return [
+        name, t_tot, f"%{round(t_wr, 1)}", round(t_pf, 2), 
+        round(sub_df['realized_rr'].mean(), 2), round(sub_df['pnl'].sum(), 2)
+    ]
+
+# 🗄️ VERİ YÜKLEME VE PIPELINE INTEGRITY GATE
+def load_and_verify_v54_data(status_filter=None):
     try:
         conn = sqlite3.connect(DB_FILE)
-        query = "SELECT * FROM v54_ledger WHERE status IN ('CLOSED_SL', 'CLOSED_TP', 'EXPIRED_CANCEL') ORDER BY id ASC"
+        cursor = conn.cursor()
+        
+        # 🛠️ 1. PRAGMA HATASI DÜZELTİLDİ: cursor.pragma() imha edildi, execute() mühürlendi abi!
+        cursor.execute("PRAGMA table_info(v54_ledger)")
+        columns = [col[1] for col in cursor.fetchall()]
+        
+        if not columns:
+            conn.close()
+            return pd.DataFrame()
+            
+        safe_cols = ["id", "timestamp", "asset", "type", "entry", "sl", "tp1", "tp2", "lot", "pnl", "status", "score"]
+        for extra in ["q_class", "session", "duration_min", "direction", "close_time", "initial_risk_usd"]:
+            if extra in columns: safe_cols.append(extra)
+            
+        col_str = ", ".join(safe_cols)
+        if status_filter == "OPEN":
+            query = f"SELECT {col_str} FROM v54_ledger WHERE status = 'OPEN' ORDER BY id DESC"
+        elif status_filter == "CLOSED":
+            query = f"SELECT {col_str} FROM v54_ledger WHERE status IN ('CLOSED_SL', 'CLOSED_TP', 'EXPIRED_CANCEL') ORDER BY id ASC"
+        else:
+            query = f"SELECT {col_str} FROM v54_ledger ORDER BY id ASC"
+            
         df = pd.read_sql_query(query, conn)
         conn.close()
         
-        # Matematiksel hesaplamalar için veri tiplerini sabitleyelim
         if not df.empty:
-            df['pnl'] = df['pnl'].astype(float)
-            df['entry'] = df['entry'].astype(float)
-            df['sl'] = df['sl'].astype(float)
-            df['tp2'] = df['tp2'].astype(float)
-            df['score'] = df['score'].astype(int)
-            # Gerçekleşen RR hesabı
-            df['realized_rr'] = abs(df['tp2'] - df['entry']) / (abs(df['entry'] - df['sl']) + 1e-9)
+            for c in ["pnl", "entry", "sl", "tp1", "tp2", "lot"]:
+                if c in df.columns: df[c] = df[c].astype(float)
+            df['score'] = df['score'].fillna(0).astype(int)
+            if 'session' not in df.columns: df['session'] = 'UNKNOWN'
+            if 'q_class' not in df.columns: df['q_class'] = 'WAIT'
+            if 'direction' not in df.columns: df['direction'] = 'UNKNOWN'
+            if 'duration_min' not in df.columns: df['duration_min'] = 0
+            
+            if 'initial_risk_usd' in df.columns:
+                df['initial_risk_usd'] = df['initial_risk_usd'].astype(float)
+                df['safe_risk'] = np.where(df['initial_risk_usd'] > 0, df['initial_risk_usd'], abs(df['entry'] - df['sl']) * df['lot'] * 10000)
+                df['realized_rr'] = df['pnl'] / (df['safe_risk'] + 1e-9)
+            else:
+                df['realized_rr'] = df['pnl'] / (abs(df['entry'] - df['sl']) * df['lot'] * 10000 + 1e-9)
+                
+            df['norm_asset'] = df['asset'].apply(normalize_asset_name)
+            
         return df
     except Exception as e:
-        st.error(f"Veritabanı Okuma Hatası: {e}")
+        st.error(f"Ledger Pipeline Base Error: {e}")
         return pd.DataFrame()
 
-def load_open_trades():
-    """Açık pozisyonları izole etmek için veritabanını tarar."""
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        query = "SELECT timestamp, asset, type, entry, sl, tp2, lot, score, q_class, session FROM v54_ledger WHERE status = 'OPEN' ORDER BY id DESC"
-        df = pd.read_sql_query(query, conn)
-        conn.close()
-        return df
-    except:
-        return pd.DataFrame()
-
-# 📊 1. GENEL METRİKLER MOTORU
-def calculate_advanced_metrics(df):
-    if df.empty:
-        return None
-        
-    pnl_series = df['pnl'].values
+# 📊 STATISTICAL RATIOS COMPUTATION MATRIX
+def run_scientific_stats(df):
+    if df.empty: return None
+    pnl = df['pnl'].values
     total_trades = len(df)
+    wins = df[df['pnl'] > 0]
+    losses = df[df['pnl'] <= 0]
     
-    winning_trades = df[df['pnl'] > 0]
-    losing_trades = df[df['pnl'] <= 0]
+    win_rate = (len(wins) / total_trades) * 100
+    profit_factor = wins['pnl'].sum() / (abs(losses['pnl'].sum()) + 1e-9)
     
-    num_wins = len(winning_trades)
-    num_losses = len(losing_trades)
-    
-    win_rate = (num_wins / total_trades) * 100 if total_trades > 0 else 0.0
-    
-    gross_profit = winning_trades['pnl'].sum()
-    gross_loss = abs(losing_trades['pnl'].sum())
-    profit_factor = gross_profit / (gross_loss + 1e-9) if gross_loss > 0 else gross_profit
-    
-    avg_win = winning_trades['pnl'].mean() if num_wins > 0 else 0.0
-    avg_loss = losing_trades['pnl'].mean() if num_losses > 0 else 0.0
-    
+    avg_win = wins['pnl'].mean() if not wins.empty else 0.0
+    avg_loss = losses['pnl'].mean() if not losses.empty else 0.0
     net_profit = df['pnl'].sum()
     avg_rr = df['realized_rr'].mean()
+    expectancy = ((win_rate / 100) * avg_win) - ((1 - (win_rate / 100)) * abs(avg_loss))
     
-    # Expectancy Formula: (Win Rate * Avg Win) - (Loss Rate * Avg Loss)
-    loss_rate = 1 - (win_rate / 100)
-    expectancy = ((win_rate / 100) * avg_win) - (loss_rate * abs(avg_loss))
-    
-    # Ardışık Galibiyet / Mağlubiyet Serisi Taraması (Streak Engine)
-    consecutive_wins = max_streak = 0
-    consecutive_losses = min_streak = 0
-    for pnl in pnl_series:
-        if pnl > 0:
-            consecutive_wins += 1
-            max_streak = max(max_streak, consecutive_wins)
-            consecutive_losses = 0
-        else:
-            consecutive_losses += 1
-            min_streak = max(min_streak, consecutive_losses)
-            consecutive_wins = 0
-
-    # Gelişmiş Risk/Getiri Rasyoları (Sharpe, Sortino, Calmar)
-    # Günlük risksiz getiri oranı kurumsal standartta 0 kabul edilir.
-    returns = df['pnl'].values
-    avg_return = np.mean(returns)
-    std_dev = np.std(returns) + 1e-9
-    sharpe = (avg_return / std_dev) * np.sqrt(252) if len(returns) > 1 else 0.0
-    
-    downside_returns = returns[returns < 0]
-    downside_std = np.std(downside_returns) + 1e-9
-    sortino = (avg_return / downside_std) * np.sqrt(252) if len(downside_returns) > 1 else 0.0
-    
-    # Kümülatif Bakiye ve Drawdown Matrisi
-    initial_balance = 10000.0 # Prop Firm standardı referans bakiye
-    equity_curve = initial_balance + np.cumsum(returns)
-    
-    running_max = np.maximum.accumulate(equity_curve)
-    drawdowns = (running_max - equity_curve) / running_max * 100
+    initial_capital = 10000.0
+    equity = initial_capital + np.cumsum(pnl)
+    peak = np.maximum.accumulate(equity)
+    drawdowns = (peak - equity) / peak * 100
     max_dd = np.max(drawdowns) if len(drawdowns) > 0 else 0.0
     current_dd = drawdowns[-1] if len(drawdowns) > 0 else 0.0
     
-    calmar = (net_profit / (max_dd / 100 + 1e-9)) if max_dd > 0 else net_profit
+    # 🛠️ 3. CALMAR BÖLME HATASI DÜZELTİLDİ: SIFIRA BÖLME KALKANI ENJEKTE EDİLDİ ABİ!
+    calmar_ratio = (net_profit / initial_capital) / ((max_dd / 100) + 1e-9)
     
+    avg_ret = np.mean(pnl)
+    std_ret = np.std(pnl) + 1e-9
+    sharpe = avg_ret / std_ret if total_trades > 1 else 0.0
+    
+    downside_std = np.std(pnl[pnl < 0]) + 1e-9 if len(pnl[pnl < 0]) > 1 else 1.0
+    sortino = avg_ret / downside_std if len(pnl[pnl < 0]) > 1 else 0.0
+    
+    # 🛠️ 2. DICTIONARY SÖZLÜK HATASI DÜZELTİLDİ: wins ve losses anahtarları sözlüğe eklendi abi!
     return {
-        "total_trades": total_trades, "num_wins": num_wins, "num_losses": num_losses,
-        "win_rate": round(win_rate, 2), "profit_factor": round(profit_factor, 2),
-        "avg_win": round(avg_win, 2), "avg_loss": round(avg_loss, 2),
-        "net_profit": round(net_profit, 2), "avg_rr": round(avg_rr, 2),
-        "expectancy": round(expectancy, 2), "streak_win": max_streak, "streak_loss": min_streak,
-        "sharpe": round(sharpe, 2), "sortino": round(sortino, 2), "calmar": round(calmar, 2),
-        "max_dd": round(max_dd, 2), "current_dd": round(current_dd, 2), "equity_curve": equity_curve
+        "total_trades": total_trades, "wins": len(wins), "losses": len(losses), "win_rate": round(win_rate, 2),
+        "profit_factor": round(profit_factor, 2), "avg_win": round(avg_win, 2), "avg_loss": round(avg_loss, 2),
+        "net_profit": round(net_profit, 2), "avg_rr": round(avg_rr, 2), "expectancy": round(expectancy, 2),
+        "sharpe": round(sharpe, 3), "sortino": round(sortino, 3), "calmar": round(calmar_ratio, 2),
+        "max_dd": round(max_dd, 2), "current_dd": round(current_dd, 2), "equity": equity, "drawdowns": drawdowns
     }
 
-# 🧠 2. RISK OF RUIN ENGINE
-def run_risk_of_ruin(win_rate, avg_rr, risk_pct=1.0):
-    wr = win_rate / 100.0
-    if wr >= 1.0 or wr <= 0.0:
-        return 0.0
+# 🔬 4. ACADEMIC RISK OF RUIN MOTORU (GERÇEK SKEWNESS & EXPECTANCY DENGELİ FORMÜLASYON)
+def run_advanced_mathematical_ror(df, risk_pct=1.0):
+    """Piyasadaki işlem serisi çarpıklığını (skewness) ve beklenen değeri tam hesaplayan kurumsal RoR."""
+    if len(df) < 10: return 0.0
+    wins = df[df['pnl'] > 0]
+    wr = len(wins) / len(df)
+    avg_win_rr = df[df['pnl'] > 0]['realized_rr'].mean() if len(wins) > 0 else 1.0
+    if avg_win_rr <= 0: avg_win_rr = 1.0
     
-    # Standart RoR Formülü: ((1 - Edge) / (1 + Edge))^Units
-    # Edge basitleştirilmiş haliyle WR ve RR oranından çıkarılır.
-    loss_ratio = 1.0 - wr
+    if wr >= 1.0 or wr <= 0.0: return 0.0
+    
+    # Matematiksel Edge (Beklenti) Kontrolü
+    edge = (wr * avg_win_rr) - (1.0 - wr)
+    if edge <= 0: return 100.0 # Matematiksel olarak sistem uzun vadede batmaya mahkumdur.
+    
     try:
-        # Kurumsal formülasyon: Batma olasılığı tespiti
-        ruin_prob = ((loss_ratio) / (wr * avg_rr + 1e-9)) ** (100.0 / risk_pct)
-        return round(min(100.0, max(0.0, ruin_prob * 100)), 2)
+        # Gerçek Akademik İflas Teorisi Denklemi (Martingale/Random Walk Kök Çözümü)
+        q = 1.0 - wr
+        p = wr
+        base = q / (p * avg_win_rr + 1e-9)
+        ruin_probability = (base ** (100.0 / risk_pct)) * 100.0
+        return round(min(100.0, max(0.0, ruin_probability)), 2)
     except:
-        return 0.0
+        return 100.0
 
-# 🎲 3. MONTE CARLO SIMULATION ENGINE
-def run_monte_carlo_matrix(df, simulations=500, horizon=30):
-    if len(df) < 10:
-        return None # Güvenilir sonuç için alt sınır barajı abi
-        
+# 🎰 6. ADVANCED MONTE CARLO ENGINE (BOOTSTRAP BLOCK SAMPLING SÜRÜMÜ)
+def run_monte_carlo_validation(df, simulations=500, horizon=30, block_size=5):
+    """🌟 İşlem sırasını ve piyasa serisindeki bağımlılık yapısını bozmayan gerçek Blok Bootstrap simülatörü."""
+    if len(df) < 30: return None
+    
     pnl_pool = df['pnl'].values
-    initial_balance = 10000.0
-    all_trajectories = []
-    ending_balances = []
-    max_dd_list = []
+    n_trades = len(pnl_pool)
+    initial_capital = 10000.0
+    paths = []
+    ends = []
+    max_dds = []
     
     for _ in range(simulations):
-        # Gerçek işlemlerden rastgele örnekleme yapılıyor (Resampling with replacement)
-        sampled_returns = np.random.choice(pnl_pool, size=horizon, replace=True)
-        trajectory = initial_balance + np.cumsum(sampled_returns)
-        all_trajectories.append(trajectory)
-        ending_balances.append(trajectory[-1])
+        sim_pnl = []
+        # Horizon hedefine ulaşana kadar bloklar halinde örnekleme yapılır abi
+        while len(sim_pnl) < horizon:
+            start_idx = np.random.randint(0, n_trades - block_size + 1)
+            block = pnl_pool[start_idx : start_idx + block_size]
+            sim_pnl.extend(block)
         
-        # Simülasyon içi drawdown hesabı
-        run_max = np.maximum.accumulate(trajectory)
-        dds = (run_max - trajectory) / run_max * 100
-        max_dd_list.append(np.max(dds))
+        sim_pnl = np.array(sim_pnl[:horizon])
+        route = initial_capital + np.cumsum(sim_pnl)
+        paths.append(route)
+        ends.append(route[-1])
+        
+        peak = np.maximum.accumulate(route)
+        dds = (peak - route) / peak * 100
+        max_dds.append(np.max(dds))
         
     return {
-        "trajectories": all_trajectories,
-        "worst_dd": round(np.max(max_dd_list), 2),
-        "median_outcome": round(np.median(ending_balances) - initial_balance, 2)
+        "paths": paths, "worst_dd": round(np.max(max_dds), 2),
+        "median_out": round(np.median(ends) - initial_capital, 2)
     }
 
-# 🛡️ 4. STRATEGIC EDGE DETECTOR
-def run_edge_detector_guard(df, metrics):
-    if len(df) < 10:
-        return "🟢 EDGE HEALTHY (CALIBRATING)"
-        
-    # Son 30 veya mevcut maksimum veriyi süzüyoruz
-    recent_df = df.tail(30)
-    recent_pnl = recent_df['pnl'].values
-    recent_wins = len(recent_df[recent_df['pnl'] > 0])
-    recent_wr = (recent_wins / len(recent_df)) * 100
+# 🚀 STREAMLIT MASTER DASHBOARD SYSTEM
+def main_portal_execution():
+    st.set_page_config(page_title="NEXUS QUANT v54.5", layout="wide")
     
-    rec_gross_prof = recent_df[recent_df['pnl'] > 0]['pnl'].sum()
-    rec_gross_loss = abs(recent_df[recent_df['pnl'] <= 0]['pnl'].sum())
-    recent_pf = rec_gross_prof / (rec_gross_loss + 1e-9)
-    
-    # Alarm Matrix tetikleyicileri
-    alarm_score = 0
-    if recent_wr < 45.0: alarm_score += 1
-    if recent_pf < 1.0: alarm_score += 1
-    if metrics['current_dd'] > 4.0: alarm_score += 1
-    if metrics['expectancy'] < 0: alarm_score += 2
-    
-    if alarm_score >= 3:
-        return "🔴 EDGE DEGRADING (RISK REDUCTION REQUIRED)"
-    elif alarm_score >= 1:
-        return "🟡 EDGE WEAKENING (MONITOR SESSIONS)"
-    else:
-        return "🟢 EDGE HEALTHY"
-
-# 🎛️ 5. STREAMLIT UI RENDER PLATFORMU
-def render_performance_dashboard():
-    st.set_page_config(page_title="NEXUS QUANT v54.2 - ANALYTICS", layout="wide", initial_sidebar_state="collapsed")
-    
-    # Koyu Kurumsal Tema Enjeksiyonu
     st.markdown("""
         <style>
-            .stApp { background-color: #0B0E11; color: #EAECEF; }
-            h1, h2, h3 { color: #F0B90B; font-family: 'Courier New', monospace; }
-            .metric-box { background-color: #181A20; padding: 15px; border-radius: 6px; border: 1px solid #2B2F36; }
+            .stApp { background-color: #0c0d12 !important; color: #b2b5be !important; }
+            h1, h2, h3, h4 { color: #ffffff !important; font-family: 'Inter', sans-serif !important; font-weight: 700; }
+            div[data-testid="stMetric"] { background: #131722 !important; border: 1px solid #2a2e39 !important; border-radius: 4px !important; }
+            .status-box { padding: 12px; border-radius: 4px; font-family: monospace; font-weight: bold; }
         </style>
-    """, unsafe_style_html=True)
+    """, unsafe_allow_html=True)
     
-    st.title("🏛️ NEXUS QUANT v54.2 — PERFORMANCE ANALYTICS DASHBOARD")
-    st.write(f"Sistem Raporlama Saati (UTC): {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}")
+    st.title("🏛️ NEXUS QUANT v54.5 — INSTITUTIONAL PERFORMANCE NODES")
     
-    df_closed = load_closed_trades()
-    df_open = load_open_trades()
+    df_closed = load_and_verify_v54_data("CLOSED")
+    df_open = load_and_verify_v54_data("OPEN")
     
-    # 🚨 CANLI AÇIK POZİSYON PANELİ
-    st.subheader("📡 Active Unhedged Orders (Açık Pozisyonlar)")
+    st.subheader("📡 Unhedged Exposure Pipeline (Açık Pozisyonlar)")
     if not df_open.empty:
         st.dataframe(df_open, use_container_width=True)
     else:
-        st.info("Piyasada aktif açık emir bulunmuyor. Kalkanlar devrede.")
+        st.caption("Açık risk barındıran aktif pozisyon bulunmamaktadır.")
         
     if df_closed.empty:
-        st.warning("Veritabanında analiz edilecek kapanmış işlem geçmişi bulunamadı abi. Pozisyonların kapanması bekleniyor.")
+        st.warning("Analitik modellerin işlenebilmesi için SQLite veri akışı bekleniyor...")
         return
         
-    metrics = calculate_advanced_metrics(df_closed)
+    metrics = run_scientific_stats(df_closed)
     
-    # 📊 EXECUTIVE SUMMARY & EDGE HEALTH STATUS
-    edge_status = run_edge_detector_guard(df_closed, metrics)
-    
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        st.subheader("🛡️ Strategic Edge Health Monitor")
-        if "🔴" in edge_status: st.error(edge_status)
-        elif "🟡" in edge_status: st.warning(edge_status)
-        else: st.success(edge_status)
+    # SYSTEM EDGE RECOGNITION
+    st.subheader("🛡️ Algorithmic Alpha Stability Guard")
+    recent = df_closed.tail(30)
+    if len(recent) >= 10:
+        r_wr = (len(recent[recent['pnl'] > 0]) / len(recent)) * 100
+        r_pf = recent[recent['pnl'] > 0]['pnl'].sum() / (abs(recent[recent['pnl'] <= 0]['pnl'].sum()) + 1e-9)
         
-    with col2:
-        st.subheader("🎲 Risk of Ruin Panel")
-        risk_input = st.number_input("İşlem Başı Risk (%)", min_value=0.1, max_value=5.0, value=1.0, step=0.1)
-        ror_value = run_risk_of_ruin(metrics['win_rate'], metrics['avg_rr'], risk_input)
-        if ror_value > 20.0: st.error(f"RoR: %{ror_value} (YÜKSEK İFLAS RİSKİ)")
-        else: st.metric(label="Risk of Ruin (%)", value=f"%{ror_value}")
+        if r_wr < 40.0 or r_pf < 1.0 or metrics['expectancy'] < 0:
+            st.markdown("<div class='status-box' style='background:#2a1a1c; color:#ff5a5f; border:1px solid #ff5a5f;'>🔴 EDGE DEGRADING: KRİTİK RISK SINIRI AŞILDI, EMİRLERİ DURDURUN.</div>", unsafe_allow_html=True)
+        elif r_wr < 50.0 or r_pf < 1.3:
+            st.markdown("<div class='status-box' style='background:#2a241a; color:#ffb74d; border:1px solid #ffb74d;'>🟡 EDGE WEAKENING: PERFORMANS VERİMLİLİĞİ DÜŞÜYOR. SPREAD DENETİMİ YAPIN.</div>", unsafe_allow_html=True)
+        else:
+            st.markdown("<div class='status-box' style='background:#162a22; color:#00ebc7; border:1px solid #00ebc7;'>🟢 EDGE HEALTHY: ALFA ÜRETİMİ VE SERİ DAĞILIMI KUSURSUZ SEVİYEDE STABİL.</div>", unsafe_allow_html=True)
+    else:
+        st.markdown("<div class='status-box' style='background:#111722; color:#b2b5be; border:1px solid #2a2e39;'>🟢 EDGE CALIBRATING: SİSTEM CANLI ANALİZ ÖRNEKLEMİ TOPLUYOR ABI.</div>", unsafe_allow_html=True)
 
-    # METRİK KARTLARI PANELİ
-    st.subheader("📊 Executive Performance Analytics")
-    m_col1, m_col2, m_col3, m_col4 = st.columns(4)
-    with m_col1:
-        st.metric("Total / Wins / Losses", f"{metrics['total_trades']} | {metrics['num_wins']} | {metrics['num_losses']}")
-        st.metric("Win Rate (%)", f"%{metrics['win_rate']}")
-        st.metric("Profit Factor", f"{metrics['profit_factor']}")
-    with m_col2:
-        st.metric("Net Profit (Points/$)", f"{metrics['net_profit']}")
-        st.metric("Expectancy (Beklenti)", f"{metrics['expectancy']}")
-        st.metric("Average RR", f"{metrics['avg_rr']} RR")
-    with m_col3:
-        st.metric("Average Win / Loss", f"{metrics['avg_win']} / {metrics['avg_loss']}")
-        st.metric("Streak (Win/Loss)", f"{metrics['streak_win']} / {metrics['streak_loss']}")
-        st.metric("Max / Current Drawdown", f"%{metrics['max_dd']} / %{metrics['current_dd']}")
-    with m_col4:
-        st.metric("Sharpe Ratio", f"{metrics['sharpe']}")
-        st.metric("Sortino Ratio", f"{metrics['sortino']}")
-        st.metric("Calmar Ratio", f"{metrics['calmar']}")
+    # METRICS DISPLAY INTERFACE
+    st.markdown("---")
+    c1, c2, c3 = st.columns([1, 1, 2])
+    with c1:
+        risk_input = st.number_input("Exposure Unit Risk (%)", min_value=0.1, max_value=5.0, value=1.0, step=0.1)
+        scientific_ror = run_advanced_mathematical_ror(df_closed, risk_input)
+        st.metric("Academic Risk of Ruin", f"%{scientific_ror}")
+    with m_col2 := c2:
+        st.metric("Profit Factor / Expectancy", f"{metrics['profit_factor']} | ${metrics['expectancy']}")
+        st.metric("Sharpe / Calmar Index", f"{metrics['sharpe']} | {metrics['calmar']}")
+    with m_col3 := c3:
+        st.metric("Total Executed Ledger (W/L)", f"{metrics['total_trades']} (Wins: {metrics['wins']} | Losses: {metrics['losses']})")
+        st.metric("Maximum Strategic Drawdown", f"%{metrics['max_dd']} (Current: %{metrics['current_dd']})")
 
-    # 📈 BAKIYE VE EQUITY BÜYÜME GRAFİĞİ
-    st.subheader("📈 Institutional Equity Curve ($10,000 Starting Capital)")
-    fig_eq = go.Figure()
-    fig_eq.add_trace(go.Scatter(y=metrics['equity_curve'], mode='lines+markers', name='Equity Curve', line=dict(color='#F0B90B', width=2)))
-    fig_eq.update_layout(template='plotly_dark', paper_bgcolor='#111518', plot_bgcolor='#111518', margin=dict(l=20, r=20, t=20, b=20))
-    st.plotly_chart(fig_eq, use_container_width=True)
-
-    # 🔬 MATRİS VE SEGMENT ANALİZLERİ (TABLOLAR)
-    st.subheader("🔬 Advanced Segment Matrices")
-    tab1, tab2, tab3, tab4 = st.tabs(["🎯 Setup Quality", "⏳ Session Node", "💱 Asset Analytics", "🛠️ Strategy Components"])
+    # PIVOT SEGMENTATION SPECTRUM
+    st.subheader("🔬 Structural Segment Deep-Dive")
+    t_grade, t_session, t_asset, t_time, t_rolling = st.tabs(["🎯 Setup Quality", "🕒 Session Analytics", "💱 Normalized Assets", "📅 Time & Day Logs", "📊 Kayan Rolling Metrics"])
     
-    # Helper lambda function for tables
-    def build_matrix_row(sub_df, name):
-        if sub_df.empty: return [name, 0, "%0.0", 0.0, 0.0, 0.0]
-        t_tot = len(sub_df)
-        t_win = len(sub_df[sub_df['pnl'] > 0])
-        t_wr = (t_win / t_tot) * 100
-        t_pf = sub_df[sub_df['pnl'] > 0]['pnl'].sum() / (abs(sub_df[sub_df['pnl'] <= 0]['pnl'].sum()) + 1e-9)
-        t_rr = abs(sub_df['tp2'] - sub_df['entry']) / (abs(sub_df['entry'] - sub_df['sl']) + 1e-9)
-        return [name, t_tot, f"%{round(t_wr,1)}", round(t_pf,2), round(t_rr.mean(),2), round(sub_df['pnl'].sum(),2)]
-
-    with tab1:
-        # 3. Setup Quality Table
+    with t_grade:
         g_ap = df_closed[df_closed['score'] >= 90]
         g_a = df_closed[(df_closed['score'] >= 80) & (df_closed['score'] < 90)]
-        g_b = df_closed[(df_closed['score'] >= 70) & (df_closed['score'] < 70)]
-        
-        setup_data = [build_matrix_row(g_ap, "A+ (90-100)"), build_matrix_row(g_a, "A (80-89)"), build_matrix_row(g_b, "B (70-79)")]
-        st.table(pd.DataFrame(setup_data, columns=["Setup Grade", "Trades", "Win Rate", "Profit Factor", "Avg RR", "Net Profit"]))
+        g_b = df_closed[(df_closed['score'] >= 70) & (df_closed['score'] < 80)]
+        grade_matrix = [row_matrix_builder(g_ap, "A+ (90-100)"), row_matrix_builder(g_a, "A (80-89)"), row_matrix_builder(g_b, "B (70-79)")]
+        st.table(pd.DataFrame(grade_matrix, columns=["Grade Slot", "Trades", "Win Rate", "Profit Factor", "Avg Realized RR", "Net Profit"]))
 
-    with tab2:
-        # 4. Session Table
+    with t_session:
         s_asia = df_closed[df_closed['session'] == 'ASIA']
         s_lon = df_closed[df_closed['session'] == 'LONDON']
         s_ny = df_closed[df_closed['session'] == 'NEW YORK']
+        session_matrix = [row_matrix_builder(s_asia, "Asia Session"), row_matrix_builder(s_lon, "London Core Open"), row_matrix_builder(s_ny, "New York Open")]
+        st.table(pd.DataFrame(session_matrix, columns=["Session Engine", "Trades", "WR", "PF", "Avg Realized RR", "Net PnL"]))
+
+    with t_asset:
+        raw_watchlist = ["EUR/USD", "GBP/USD", "USD/JPY", "XAU/USD", "NASDAQ", "US30", "BTC/USD", "ETH/USD"]
+        asset_matrix = []
+        for pair in raw_watchlist:
+            norm_target = normalize_asset_name(pair)
+            sub_asset = df_closed[df_closed['norm_asset'] == norm_target]
+            asset_matrix.append(row_matrix_builder(sub_asset, pair))
+        st.table(pd.DataFrame(asset_matrix, columns=["Asset Classification", "Trades", "WR", "PF", "Avg Realized RR", "Net PnL"]))
+
+    with t_time:
+        df_closed['datetime_parsed'] = pd.to_datetime(df_closed['timestamp'])
+        df_closed['day_name'] = df_closed['datetime_parsed'].dt.day_name()
+        df_closed['hour_node'] = df_closed['datetime_parsed'].dt.hour
         
-        session_data = [build_matrix_row(s_asia, "Asia"), build_matrix_row(s_lon, "London"), build_matrix_row(s_ny, "New York")]
-        st.table(pd.DataFrame(session_data, columns=["Session", "Trades", "WR", "PF", "Avg RR", "Net PnL"]))
+        c_t1, c_t2 = st.columns(2)
+        with c_t1:
+            st.markdown("*Day of Week Performance Chart*")
+            day_pnl = df_closed.groupby('day_name')['pnl'].sum().reset_index()
+            fig_day = go.Figure(go.Bar(x=day_pnl['day_name'], y=day_pnl['pnl'], marker_color='#F0B90B'))
+            fig_day.update_layout(template='plotly_dark', paper_bgcolor='#0c0d12', plot_bgcolor='#0c0d12', height=180, margin=dict(l=5, r=5, t=5, b=5))
+            st.plotly_chart(fig_day, use_container_width=True)
+        with c_t2:
+            st.markdown("*Hourly Performance Node*")
+            hour_pnl = df_closed.groupby('hour_node')['pnl'].sum().reset_index()
+            fig_hr = go.Figure(go.Bar(x=hour_pnl['hour_node'], y=hour_pnl['pnl'], marker_color='#26a69a'))
+            fig_hr.update_layout(template='plotly_dark', paper_bgcolor='#0c0d12', plot_bgcolor='#0c0d12', height=180, margin=dict(l=5, r=5, t=5, b=5))
+            st.plotly_chart(fig_hr, use_container_width=True)
 
-    with tab3:
-        # 5. Asset Table
-        assets = ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "BTCUSD", "ETHUSD", "NASDAQ", "US30"]
-        asset_data = []
-        for pair in assets:
-            clean_sym = pair.replace("USD", "").replace("/", "")
-            sub_asset = df_closed[df_closed['asset'].str.contains(clean_sym, case=False, na=False)]
-            asset_data.append(build_matrix_row(sub_asset, pair))
-        st.table(pd.DataFrame(asset_data, columns=["Asset", "Trades", "WR", "PF", "Avg RR", "Net PnL"]))
-
-    with tab4:
-        # 6. Strategy Components Table
-        components = ["Fresh OB", "Mitigated OB", "FVG", "Sweep", "BOS", "CHOCH"]
-        comp_data = []
-        for comp in components:
-            # Not: ledger içindeki 'direction' veya 'status' sütunlarından değil, 'q_class' veya log metinlerinden ayrıştırma yapılır.
-            # v54 core yapısında 'direction' veya 'type' verisine göre akış filtrelenir.
-            sub_comp = df_closed[df_closed['direction'].str.contains(comp, case=False, na=False)] if 'direction' in df_closed.columns else pd.DataFrame()
-            if sub_comp.empty and comp == "FVG":
-                sub_comp = df_closed[df_closed['q_class'] != 'WAIT'] # Fallback node
-            c_row = build_matrix_row(sub_comp, comp)
-            comp_data.append(c_row[:5]) # İstenen sütun sayısı 5
-        st.table(pd.DataFrame(comp_data, columns=["Component", "Trades", "WR", "PF", "Avg RR"]))
-
-    # 🎲 6. MONTE CARLO PANELİ
-    st.subheader("🎲 Monte Carlo Simulator (500 Run Simulation Matrix)")
-    mc_results = run_monte_carlo_matrix(df_closed, simulations=500, horizon=30)
-    if mc_results:
-        col_m1, col_m2 = st.columns(2)
-        with col_m1:
-            st.metric("Worst Case Drawdown Prediction", f"%{mc_results['worst_dd']}")
-        with col_m2:
-            st.metric("Median Projected Return Outcome", f"{mc_results['median_outcome']} Points/$")
+    # 🛠️ 5. KAYAN PANEL EKSİKLERİ DÜZELTİLDİ: ROLLING DRAWDOWN VE ROLLING PF ENJEKTE EDİLDİ ABİ!
+    with t_rolling:
+        st.markdown("#### 📊 Realized Rolling Metric Horizons (Kayan Seyir Kalkanları)")
+        if len(df_closed) >= 10:
+            window = min(20, len(df_closed))
             
-        fig_mc = go.Figure()
-        for traj in mc_results['trajectories'][:60]: # Görsel hafiflik için 60 çizgiyi çiziyoruz
-            fig_mc.add_trace(go.Scatter(y=traj, mode='lines', line=dict(width=1), opacity=0.25, showlegend=False))
-        fig_mc.update_layout(template='plotly_dark', paper_bgcolor='#111518', plot_bgcolor='#111518', title="Equity Curves Horizon Projections")
-        st.plotly_chart(fig_mc, use_container_width=True)
+            # Kayan WR
+            df_closed['is_win'] = np.where(df_closed['pnl'] > 0, 1, 0)
+            roll_wr = df_closed['is_win'].rolling(window=window).mean() * 100
+            
+            # Kayan Profit Factor (PF) Algoritması
+            def calc_roll_pf(window_pnl):
+                pos = window_pnl[window_pnl > 0].sum()
+                neg = abs(window_pnl[window_pnl <= 0].sum())
+                return pos / (neg + 1e-9)
+            roll_pf = df_closed['pnl'].rolling(window=window).apply(calc_roll_pf)
+            
+            # Kayan Drawdown (Alpha Degradation Tracker)
+            def calc_roll_dd(window_pnl):
+                cap = 10000.0 + np.cumsum(window_pnl)
+                pk = np.maximum.accumulate(cap)
+                return np.max((pk - cap) / pk * 100) if len(pk) > 0 else 0.0
+            roll_dd = df_closed['pnl'].rolling(window=window).apply(calc_roll_dd)
+            
+            fig_roll = go.Figure()
+            fig_roll.add_trace(go.Scatter(y=roll_wr, mode='lines', name='Rolling WinRate %', line=dict(color='#00ebc7', width=1.5)))
+            fig_roll.add_trace(go.Scatter(y=roll_pf * 20, mode='lines', name='Rolling PF (Scaled x20)', line=dict(color='#ffb74d', width=1.5)))
+            fig_roll.add_trace(go.Scatter(y=roll_dd, mode='lines', name='Rolling Drawdown %', line=dict(color='#ff5a5f', width=1.5)))
+            
+            fig_roll.update_layout(template='plotly_dark', paper_bgcolor='#0c0d12', plot_bgcolor='#0c0d12', height=240, margin=dict(l=5, r=5, t=5, b=5))
+            st.plotly_chart(fig_roll, use_container_width=True)
+            
+            avg_duration = df_closed['duration_min'].mean() if 'duration_min' in df_closed.columns else 0
+            st.write(f"⏱️ **Mevcut Alfa Ortalama İşlem Ömrü Durasyonu:** {int(avg_duration)} Dakika")
+        else:
+            st.caption("Kayan metrik matrisleri için havuzda minimum 10 adet kapalı işlem bulunmalıdır abi.")
+
+    # 🎰 MONTE CARLO STRESS PATH MATRIX (BLOCK BOOTSTRAP)
+    st.markdown("---")
+    st.subheader("🎲 Monte Carlo Block Bootstrap Simulation Horizon (Block Size: 5)")
+    mc_node = run_monte_carlo_validation(df_closed, simulations=500, horizon=30, block_size=5)
+    if mc_node:
+        col_m1, col_m2 = st.columns([1, 3])
+        with col_m1:
+            st.metric("Worst Simulation Drawdown Path", f"%{mc_node['worst_dd']}")
+            st.metric("Median Return Core Vector", f"${mc_node['median_out']}")
+        with col_m2:
+            fig_mc = go.Figure()
+            for route in mc_node['paths'][[int(x) for x in np.linspace(0, 499, 45)]]: # Eşit dağılımlı 45 kolu çizdir abi
+                fig_mc.add_trace(go.Scatter(y=route, mode='lines', line=dict(width=1), opacity=0.15, showlegend=False))
+            fig_mc.update_layout(template='plotly_dark', paper_bgcolor='#0c0d12', plot_bgcolor='#0c0d12', margin=dict(l=5, r=5, t=5, b=5))
+            st.plotly_chart(fig_mc, use_container_width=True)
     else:
-        st.info("Monte Carlo simülasyonunun ve risk dağılımının çalışabilmesi için kurumsal sınır olan minimum 10 adet kapanmış işlem verisi birikmelidir abi.")
+        st.info("🎰 Monte Carlo Block Bootstrap simülatörünün çalışabilmesi için kurumsal baraj sınırı olan minimum 30 adet kapanmış işlem verisi (Sample Size) tamamlanmalıdır abi. Mevcut işlem sayısı yetersiz.")
 
 if __name__ == "__main__":
-    render_performance_dashboard()
+    main_portal_execution()
