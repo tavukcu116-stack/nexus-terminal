@@ -1,5 +1,5 @@
 # ==========================================
-# 📄 DOSYA: backend_core.py (NEXUS QUANT v54.1 - FOREX FACTORY ENGINE)
+# 📄 DOSYA: backend_core.py (NEXUS QUANT v54.5 - FULL ENGINE)
 # ==========================================
 import os
 import sqlite3
@@ -16,9 +16,11 @@ DB_FILE = "nexus_v54_vault.db"
 TWELVE_DATA_KEY = os.getenv("TWELVE_DATA_API_KEY", "MOCK_KEY")
 
 def get_db_connection():
+    """SQLite veritabanı bağlantı köprüsü."""
     return sqlite3.connect(DB_FILE)
 
 def init_v54_vault():
+    """🌟 VERİTABANI ŞEMASI: Analytics motorunu besleyen ham dolar riski kolonu dahil mühürleme katmanı."""
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
@@ -26,15 +28,19 @@ def init_v54_vault():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             timestamp TEXT, asset TEXT, type TEXT, entry REAL, sl REAL, tp1 REAL, tp2 REAL,
             lot REAL, pnl REAL, status TEXT, score INTEGER, q_class TEXT, session TEXT, 
-            duration_min INTEGER, direction TEXT, close_time TEXT
+            duration_min INTEGER, direction TEXT, close_time TEXT,
+            initial_risk_usd REAL DEFAULT 0.0
         )
     """)
     conn.commit()
     conn.close()
 
+# Başlangıçta tabloyu otonom ayağa kaldır abi
 init_v54_vault()
 
+# 📡 VERI KALITESI KONTROLU VE ÇOKLU VERI SAĞLAYICI YEDEĞİ (DATA INTEGRITY)
 def fetch_clean_candles(symbol, interval="15min", outputsize="100"):
+    """Twelve Data ve Binance yedekli veri akış hattı."""
     try:
         url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={interval}&outputsize={outputsize}&apikey={TWELVE_DATA_KEY}"
         r = requests.get(url, timeout=6).json()
@@ -42,11 +48,13 @@ def fetch_clean_candles(symbol, interval="15min", outputsize="100"):
         df = pd.DataFrame(r["values"])
         for col in ["open", "high", "low", "close"]: df[col] = df[col].astype(float)
         df['datetime'] = pd.to_datetime(df['datetime'])
+        # Eksik mum ve bozuk timestamp kalkanı
         df = df.dropna().drop_duplicates(subset=["datetime"])
         return df.iloc[::-1].reset_index(drop=True)
     except:
         pass
 
+    # İkincil Sağlayıcı: Binance Fallback Matrix
     try:
         b_sym = symbol.replace("/", "").upper() + "T" if "USD" in symbol else "EURUSDT"
         url = f"https://api.binance.com/api/v3/klines?symbol={b_sym}&interval=15m&limit={outputsize}"
@@ -59,7 +67,9 @@ def fetch_clean_candles(symbol, interval="15min", outputsize="100"):
     except:
         return None
 
+# 📡 GERÇEK BID/ASK SPREAD ÖLÇÜMÜ
 def get_live_spread_data(symbol):
+    """OHLC mumlarından bağımsız, canlı Bid/Ask quote farkını ölçer."""
     try:
         url = f"https://api.twelvedata.com/quotes?symbol={symbol}&apikey={TWELVE_DATA_KEY}"
         r = requests.get(url, timeout=4).json()
@@ -71,10 +81,10 @@ def get_live_spread_data(symbol):
     except:
         return 99.0, 0.0, 0.0
 
-# 📰 🌟 %100 GERÇEK FOREX FACTORY HABER MOTORU (MÜHÜRLÜ KATMAN ABİ)
+# 📰 %100 GERÇEK FOREX FACTORY HABER MOTORU (RSS XML PARSER LAYER)
 def check_economic_news_timeline(symbol):
+    """Forex Factory Kırmızı Klasör haberlerini tarar, 30 dk kala butonları kilitler."""
     try:
-        # Forex Factory'nin resmi kurumsal haftalık veri akışı
         url = "https://www.forexfactory.com/ffcal_xml_thisweek.xml"
         r = requests.get(url, timeout=6, headers={"User-Agent": "Mozilla/5.0"})
         
@@ -84,7 +94,6 @@ def check_economic_news_timeline(symbol):
         root = ET.fromstring(r.content)
         now_utc = datetime.now(timezone.utc)
         
-        # Pariteye göre hangi para birimi haberini süzeceğimizi seçiyoruz abi
         currency_target = "USD"
         if "EUR" in symbol: currency_target = "EUR"
         elif "GBP" in symbol: currency_target = "GBP"
@@ -95,19 +104,17 @@ def check_economic_news_timeline(symbol):
             impact = event.find('impact').text
             title = event.find('title').text
             
-            # Sadece hedef para birimimizi ilgilendiren ve KIRMIZI KLASÖR (High Impact) olan haberleri süzüyoruz abi
             if event_currency == currency_target and impact == "High":
-                date_str = event.find('date').text # Örn: 05-30-2026
-                time_str = event.find('time').text # Örn: 12:30pm
+                date_str = event.find('date').text
+                time_str = event.find('time').text
                 
-                # Forex Factory zaman formatını UTC standartlarına dönüştürme matrisi
                 full_date_str = f"{date_str} {time_str}"
                 try:
                     event_time = datetime.strptime(full_date_str, "%m-%d-%Y %I:%M%p").replace(tzinfo=timezone.utc)
                 except:
                     continue
                 
-                # 🛡️ DAKİKA DAKİKA KİLİT KALKANI: Haber saatine 30 dk kala kilitler, 15 dk sonra açar abi!
+                # 🛡️ DAKİKA KİLİDİ: 30 dk kala devreye girer, haberden 15 dk sonra kapıyı açar.
                 if event_time - timedelta(minutes=30) <= now_utc <= event_time + timedelta(minutes=15):
                     kalan_dk = int((event_time - now_utc).total_seconds() / 60)
                     if kalan_dk > 0:
@@ -119,7 +126,9 @@ def check_economic_news_timeline(symbol):
     except:
         return False, "GATES CLEAR (PARSING FALLBACK)"
 
+# 🧠 QUANTITATIVE SMC INTELLIGENCE MOTORU
 def extract_quant_smc_matrix(symbol):
+    """🌟 HARF HATASI DÜZELTİLDİ: fetch_verified_candles tamamen imha edilip clean yapısına bağlandı abi!"""
     df_4h = fetch_clean_candles(symbol, "4h", "40")
     df_1h = fetch_clean_candles(symbol, "1h", "40")
     df_15m = fetch_clean_candles(symbol, "15min", "100")
@@ -132,6 +141,7 @@ def extract_quant_smc_matrix(symbol):
     low_p = df_15m["low"].iloc[idx]
     atr = (df_15m["high"] - df_15m["low"]).rolling(14).mean().iloc[-1]
 
+    # Killzone Pencereleri (Zamana Dayalı Filtreleme)
     current_hour = datetime.utcnow().hour
     london = (8 <= current_hour < 12)
     ny = (13 <= current_hour < 17)
@@ -139,6 +149,7 @@ def extract_quant_smc_matrix(symbol):
     killzone_safe = london or ny or overlap
     session_text = "LONDON" if london else "NEW YORK" if ny else "OVERLAP" if overlap else "ASIA"
 
+    # HH-HL / LH-LL Trend Hizalama Algoritması
     htf_structure = "WAIT"
     if df_4h is not None and len(df_4h) > 5:
         h4_highs = df_4h["high"].tail(5).values
@@ -164,6 +175,7 @@ def extract_quant_smc_matrix(symbol):
 
     structure_type = "BOS BULLISH" if displacement and close_p > last_sh else "BOS BEARISH" if displacement and close_p < last_sl else "CHOCH REVERSAL" if sweep_detected else "RANGE"
 
+    # OB & FVG Skorlama ve Freshlik Analiz Sistemi
     active_ob, active_fvg = None, None
     ob_points, fvg_points = 0, 0
     
@@ -214,7 +226,9 @@ def extract_quant_smc_matrix(symbol):
         "session": session_text, "kz": killzone_safe, "entry_confirmed": entry_confirmed, "atr": atr, "action": "WAIT FOR RETEST"
     }
 
+# ⚙️ OTONOM POZİSYON TAKİP SİSTEMİ (PARTIAL TP, BREAK-EVEN & EXPIRED CONTROL)
 def manage_v54_positions(asset, current_df):
+    """Canlı emirleri yöneten ve 40 mum sınırında otonom iptal basan koruma çarkı."""
     if current_df is None or current_df.empty: return
     last_candle = current_df.iloc[-1]
     cp = last_candle["close"]
@@ -231,6 +245,7 @@ def manage_v54_positions(asset, current_df):
         status = "OPEN"
         mult = 100 if "Gold" in asset or "BTC" in asset or "ETH" in asset else 10000
         
+        # ⏱️ 40 Mum Geçerlilik Kontrolü
         fmt = "%Y-%m-%d %H:%M"
         try:
             time_delta = datetime.now() - datetime.strptime(ts, fmt)
@@ -241,7 +256,7 @@ def manage_v54_positions(asset, current_df):
 
         if t_type == "BUY" and not closed:
             if last_candle["high"] >= tp1 and sl < entry:
-                sl = entry
+                sl = entry # Yarısı kapandı, kalan risksiz başabaş noktasına çekildi!
                 cursor.execute("UPDATE v54_ledger SET sl = ?, pnl = pnl + ? WHERE id = ?", (sl, (tp1 - entry) * (lot/2) * mult, t_id))
             if last_candle["low"] <= sl:
                 closed = True; pnl = (sl - entry) * (lot/2 if sl == entry else lot) * mult; status = "CLOSED_SL"
@@ -264,7 +279,9 @@ def manage_v54_positions(asset, current_df):
     conn.commit()
     conn.close()
 
+# 📊 BACKTEST SİMÜLASYON ANALİTİĞİ
 def run_historical_backtest_matrix(df):
+    """Geçmiş verilerdeki emir dağılımlarını test eder abi."""
     if df is None or len(df) < 40: return 50.0, 1.0, 0.01, 0.0
     pnl_array = []
     wins = 0
@@ -277,4 +294,3 @@ def run_historical_backtest_matrix(df):
     wr = (wins / len(pnl_array)) * 100 if len(pnl_array) > 0 else 52.5
     pf = sum([x for x in pnl_array if x > 0]) / (abs(sum([x for x in pnl_array if x < 0])) + 1e-9)
     return round(wr, 1), round(max(0.1, pf), 2), 0.02, round(np.mean(pnl_array) if len(pnl_array) > 0 else 14.2, 2)
-        
