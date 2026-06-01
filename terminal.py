@@ -1,5 +1,5 @@
 # ==========================================
-# 📄 DOSYA: terminal.py (NEXUS QUANT v54.9 - FULL PRODUCTION UI)
+# 📄 DOSYA: terminal.py (NEXUS QUANT v55.0 - FULL AUTONOMOUS UI)
 # ==========================================
 import streamlit as st
 import pandas as pd
@@ -11,7 +11,7 @@ import backend_core as core
 from streamlit_autorefresh import st_autorefresh
 
 # ⏳ GLOBAL FRONTEND AUTO-REFRESH (60 Saniye Akıllı Kota Kalkanı)
-st_autorefresh(interval=60000, key="nexus_v54_final_frontend_refresh")
+st_autorefresh(interval=60000, key="nexus_v55_autonomous_refresh")
 
 # ==========================================
 # 🎨 BRANDED TRADINGVIEW ULTRA-DARK COGNITIVE UI
@@ -28,7 +28,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.markdown("<h2 style='margin-bottom:0px; font-weight:700;'>🏛️ NEXUS QUANT v54.9 — SYSTEM RUNTIME</h2>", unsafe_allow_html=True)
+st.markdown("<h2 style='margin-bottom:0px; font-weight:700;'>🏛️ NEXUS QUANT v55.0 — AUTONOMOUS RUNTIME</h2>", unsafe_allow_html=True)
 st.markdown("<p style='color: #848e9c; font-size:12px; margin-top:2px; margin-bottom:15px;'>Enterprise Quantitative Suite & Live Data Stream Matrix</p>", unsafe_allow_html=True)
 
 # ==========================================
@@ -57,8 +57,8 @@ daily_pnl_sum = cursor.fetchone()[0] or 0.0
 cursor.execute("SELECT SUM(pnl) FROM v54_ledger")
 total_pnl_sum = cursor.fetchone()[0] or 0.0
 
-# 🌟 BAKIYE VE RISK GIRDILERI ASLA KAYBOLMAZ ABİ!
-prop_capital = st.number_input("Account Balance Capital Size ($)", value=10000.0, step=1000.0, key=f"capital_v54_{render_asset}")
+# BAKIYE VE RISK GIRDILERI
+prop_capital = st.number_input("Account Balance Capital Size ($)", value=10000.0, step=1000.0, key=f"capital_v55_{render_asset}")
 daily_circuit_lock = daily_pnl_sum < -(prop_capital * 0.03)
 total_circuit_lock = total_pnl_sum < -(prop_capital * 0.05)
 
@@ -69,12 +69,11 @@ if len(active_runs) > 0 and render_asset == "XAU/USD":
     for r in active_runs:
         if r[0] == "EUR/USD": correlation_blocked = True
 
-# 🌟 ANA EKRAN DÜZENİ (ÇİFT SÜTUN)
+# ANA EKRAN DÜZENİ (ÇİFT SÜTUN)
 col_chart, col_desk = st.columns([3, 1])
 
 with col_chart:
     if node is None:
-        # 🛡️ VE HAFTA SONU GRAFİK KALKANI: Sadece grafik alanı maskelenir, diğer her şey yerinde kalır abi!
         st.markdown(f"""
         <div class='panel-box' style='border-left: 4px solid #ffb74d; background: #1a1510; margin-bottom:15px;'>
             <span style='font-size:24px; font-weight:700; color:#ffb74d;'>{render_asset}</span> &nbsp;&nbsp;|&nbsp;&nbsp; 
@@ -85,7 +84,6 @@ with col_chart:
         </div>
         """, unsafe_allow_html=True)
         
-        # Grafik yerine placeholder boş dark kutu basıyoruz ki şablon bozulmasın abi
         fig_placeholder = go.Figure()
         fig_placeholder.update_layout(
             template='plotly_dark', paper_bgcolor='#0c0d12', plot_bgcolor='#0c0d12', height=400,
@@ -94,10 +92,14 @@ with col_chart:
         )
         st.plotly_chart(fig_placeholder, use_container_width=True)
     else:
-        # Hafta içi veya Kripto verisi varsa tam kurumsal TV matrisi ekrana basılır abi
         df = node["df"]
-        core.manage_v54_positions(render_asset, df)
         
+        # Realized 1:3 RR Kalibrasyonu
+        sl_distance = abs(node["price"] - node["sl_p"])
+        node["tp1_p"] = node["price"] + (sl_distance * 1.5) if node["bias"] == "BUY" else node["price"] - (sl_distance * 1.5)
+        node["tp2_p"] = node["price"] + (sl_distance * 3.0) if node["bias"] == "BUY" else node["price"] - (sl_distance * 3.0)
+        node["rr"] = 3.0
+
         st.markdown(f"""
         <div class='panel-box'>
             <span style='font-size:11px; color:#848e9c; font-family:monospace;'>NEXUS HIGH-FREQUENCY AUTOMATED CORE MATRIX:</span><br>
@@ -105,7 +107,7 @@ with col_chart:
             Setup Grade: <span style='color:#00ebc7; font-weight:bold;'>{node['q_class']} ({node['score']}/100 pts)</span> &nbsp;&nbsp;|&nbsp;&nbsp;
             Bias Mode: <span style='color:#2962ff; font-weight:bold;'>{node['bias']}</span><br>
             <span style='font-size:12px; font-family:monospace; color:#b2b5be;'>
-                SMC Zone: {node['zone']} | Spread: {spread_pips:.1f} Pips | SL: {node['sl_p']:.5f} | TP1: {node['tp1_p']:.5f} | TP2: {node['tp2_p']:.5f} | Math RR: {node['rr']:.2f}
+                SMC Zone: {node['zone']} | Spread: {spread_pips:.1f} Pips | SL: {node['sl_p']:.5f} | TP1 (1.5x): {node['tp1_p']:.5f} | TP2 (3.0x Final): {node['tp2_p']:.5f} | Math RR: {node['rr']:.1f}
             </span>
         </div>
         """, unsafe_allow_html=True)
@@ -115,7 +117,6 @@ with col_chart:
         st.plotly_chart(fig, use_container_width=True)
 
 with col_desk:
-    # 🌟 SAĞ PANELDEKİ KONTROL KAPILARI ASLA GİTMEZ!
     st.markdown("#### 📋 Matrix Verification")
     
     kz_status = "✅ OPEN" if (node and node["kz"]) else "❌ CLOSED (OFFLINE)" if node is None else "❌ CLOSED"
@@ -135,8 +136,7 @@ with col_desk:
     if news_blocked:
         st.error(f"⚠️ {news_reason}")
 
-    # Risk ve Lot Hesaplama Konsolu
-    risk_pct = st.number_input("Exposure Unit Risk Vector (%)", value=1.0, step=0.1, key=f"risk_v54_{render_asset}")
+    risk_pct = st.number_input("Exposure Unit Risk Vector (%)", value=1.0, step=0.1, key=f"risk_v55_{render_asset}")
     allowed_risk_usd = prop_capital * (risk_pct / 100.0)
     
     mult_risk = 100 if "XAU" in render_asset or "BTC" in render_asset or "ETH" in render_asset else 10000
@@ -151,23 +151,20 @@ with col_desk:
     </div>
     """, unsafe_allow_html=True)
     
-    # 🌟 EMİR MÜHÜRLERİ VE BUTON DÜZENİ
-    if node and node["bias"] != "WAIT":
-        cursor.execute("SELECT COUNT(*) FROM v54_ledger WHERE asset = ? AND status = 'OPEN'", (render_asset,))
-        if cursor.fetchone()[0] == 0 and not daily_circuit_lock and not total_circuit_lock and not correlation_blocked and not news_blocked:
-            if st.button("MÜHÜRLE VE EMİR GÖNDER", key=f"btn_v54_execute_{render_asset}"):
-                calculated_risk_usd = abs(node["price"] - node["sl_p"]) * final_lot * mult_risk
-                cursor.execute(
-                    "INSERT INTO v54_ledger (timestamp, asset, type, entry, sl, tp1, tp2, lot, pnl, status, score, q_class, session, duration_min, close_time, initial_risk_usd) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.0, 'OPEN', ?, ?, ?, 0, 'RUNNING', ?)",
-                    (datetime.now().strftime("%Y-%m-%d %H:%M"), render_asset, node["bias"], node["price"], node["sl_p"], node["tp1_p"], node["tp2_p"], final_lot, node["score"], node["q_class"], node["session"], calculated_risk_usd)
-                )
-                conn.commit()
-                tg_msg = f"🏛️ *NEXUS EXECUTION DISPATCHED*\nAsset: {render_asset}\nSize: {final_lot} Lot"
-                core.send_telegram_notification(tg_msg)
-                st.toast("Emir gönderildi ve Telegram'a raporlandı!", icon="🏛️")
+    # ⚡ OTONOM TETİKLEYİCİ ARKA PLANDA ÇALIŞIYOR YAZISI
+    st.markdown("""
+    <div class='panel-box' style='border: 1px solid #00ebc7; background: #091a18; text-align:center;'>
+        <span style='color:#00ebc7; font-size:11px; font-weight:bold; font-family:monospace;'>🚀 AUTONOMOUS DISPATCH ACTIVE</span><br>
+        <span style='color:#b2b5be; font-size:10px; font-family:monospace;'>SMC Score Barajı: 75+ Pts<br>Sistem piyasayı otonom tarar ve yüksek ihtimalli emri kendi mühürler.</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Arka Plan Otonom Pozisyon Yönetim Enjeksiyonu
+    if node:
+        core.manage_v55_autonomous_engine(render_asset, node, final_lot, daily_circuit_lock, total_circuit_lock, correlation_blocked, news_blocked, prop_capital)
 
 # ==========================================
-# 📒 ALT PERFORMANS VE FORWARD TEST DEFTERİ (ASLA GİTMEZ)
+# 📒 ALT PERFORMANS DEFTERİ
 # ==========================================
 st.markdown("---")
 st.markdown("##### 📒 Live Performance Overview & Advanced Metrics")
@@ -177,11 +174,11 @@ if not df_ledger.empty:
     closed_pnl = df_ledger["pnl"].values
     wins = len(df_ledger[df_ledger["pnl"] > 0])
     wr = (wins / len(df_ledger)) * 100
-    p_factor = closed_pnl[closed_pnl > 0].sum() / (abs(closed_pnl[closed_pnl < 0].sum()) + 1e-9)
+    p_factor = closed_pnl[closed_pnl > 0].sum() / (abs(closed_pnl[closed_p0l < 0].sum()) + 1e-9)
     
     st.markdown(f"""
     <div class='panel-box' style='font-family: monospace; font-size:11px;'>
-        <b>[CANLI FORWARD TEST]</b> Win Rate: <span style='color:#00ebc7;'>%{wr:.1f}</span> | Profit Factor: {p_factor:.2f} | Kümülatif Net PnL: <span style='color:#00ebc7;'>${closed_pnl.sum():.2f}</span>
+        <b>[CANLI AUTONOMOUS FORWARD TEST]</b> Win Rate: <span style='color:#00ebc7;'>%{wr:.1f}</span> | Profit Factor: {p_factor:.2f} | Kümülatif Net PnL: <span style='color:#00ebc7;'>${closed_pnl.sum():.2f}</span>
     </div>
     """, unsafe_allow_html=True)
     
