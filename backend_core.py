@@ -1,5 +1,5 @@
 # ==========================================
-# 📄 DOSYA: backend_core.py (NEXUS QUANT v55.0 - OTONOM DEV SÜRÜM)
+# 📄 DOSYA: backend_core.py (NEXUS QUANT v55.1 - FIXED TP MATRIX)
 # ==========================================
 import os
 import sqlite3
@@ -180,11 +180,23 @@ def extract_quant_smc_matrix(symbol):
     elif score >= 80: q_class = "A"
     elif score >= 70: q_class = "B"
 
-    bias = "WAIT"; sl_p = tp1_p = tp2_p = 0.0
+    bias = "WAIT"
+    sl_p = tp1_p = tp2_p = 0.0
+    
+    # 🌟 KRİTİK DÜZELTME: Senin verdiğin 1:1.5 ve 1:3 Matematiksel RR Hedef Algoritması Buraya Mühürlendi Abi!
     if htf_structure == "BULLISH" and market_zone == "DISCOUNT" and q_class != "WAIT":
-        bias = "BUY"; sl_p = last_sl - (atr * 0.2)
+        bias = "BUY"
+        sl_p = last_sl - (atr * 0.2)
+        risk = abs(close_p - sl_p)
+        tp1_p = close_p + (risk * 1.5)
+        tp2_p = close_p + (risk * 3.0)
+        
     elif htf_structure == "BEARISH" and market_zone == "PREMIUM" and q_class != "WAIT":
-        bias = "SELL"; sl_p = last_sh + (atr * 0.2)
+        bias = "SELL"
+        sl_p = last_sh + (atr * 0.2)
+        risk = abs(sl_p - close_p)
+        tp1_p = close_p - (risk * 1.5)
+        tp2_p = close_p - (risk * 3.0)
 
     return {
         "df": df_15m, "price": close_p, "pdh": pdh, "pdl": pdl, "eq": eq_level, "zone": market_zone,
@@ -193,9 +205,7 @@ def extract_quant_smc_matrix(symbol):
         "session": session_text, "kz": killzone_safe, "entry_confirmed": entry_confirmed, "atr": atr, "action": "WAIT FOR RETEST"
     }
 
-# 🚀 🌟 YENİ EKLENEN: OTONOM EMİR VE STRATEJİ SÜZGECİ (v55.0 BEYNİ)
 def manage_v55_autonomous_engine(asset, node, final_lot, daily_lock, total_lock, corr_lock, news_lock, capital):
-    """Mustafa Abi'nin Zırhlı Otonom Motoru: Skor 75 ve üzeri olduğunda habere ve riske bakıp emri kendi mühürler abi."""
     if daily_lock or total_lock or corr_lock or news_lock: return
     if node["bias"] == "WAIT" or node["score"] < 75: return
 
@@ -214,7 +224,7 @@ def manage_v55_autonomous_engine(asset, node, final_lot, daily_lock, total_lock,
         conn.commit()
         
         tg_msg = (
-            f"🏛 *NEXUS AUTONOMOUS DISPATCH SUCCESS*\n\n"
+            f"🏛️ *NEXUS AUTONOMOUS DISPATCH SUCCESS*\n\n"
             f"✅ *Sistem Strateji Süzgeçlerinden Tam Not Aldı!*\n"
             f"🔹 *Asset:* {asset} | *Score:* `{node['score']}/100` ({node['q_class']})\n"
             f"🔹 *Vector:* `{node['bias']}` | *Size:* `{final_lot} Lot` (${calculated_risk_usd:.2f})\n\n"
