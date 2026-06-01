@@ -1,5 +1,5 @@
 # ==========================================
-# 📄 DOSYA: backend_core.py (NEXUS QUANT v55.2 - REAL QUANT BASE)
+# 📄 DOSYA: backend_core.py (NEXUS QUANT v55.3 - LOGIC OPTIMIZED)
 # ==========================================
 import os
 import sqlite3
@@ -75,9 +75,7 @@ def fetch_clean_candles(symbol, interval="15min", outputsize="100"):
     except: return None
     return None
 
-# 🧠 4. LOT HESAPLAMA MOTORU (Risk Bazlı Pozisyon Büyüklüğü - $calculate\_position\_size$)
 def calculate_position_size(capital, risk_pct, price, sl_p, asset):
-    """Mustafa Abi'nin kurumsal lot hesaplama kalkanı. Maksimum %1 risk birimine göre lotu ölçer."""
     if price == sl_p or sl_p == 0: return 0.01
     allowed_loss_usd = capital * (risk_pct / 100.0)
     multiplier = 10 if "XAU" in asset or "BTC" in asset or "ETH" in asset else 10000
@@ -97,16 +95,12 @@ def get_live_spread_data(symbol):
         return 1.2, 0.0, 0.0
     except: return 1.2, 0.0, 0.0
 
-# 🧠 3. GÜVENİLİR HABER MOTORU (JSON API Fallback Kalkanı)
 @st.cache_data(ttl=600)
 def check_economic_news_timeline(symbol):
-    """Forex Factory XML çökerse, kurumsal JSON takvim hat hattına yedeklenir abi."""
     currency_target = "USD"
     if "EUR" in symbol: currency_target = "EUR"
     elif "GBP" in symbol: currency_target = "GBP"
-    elif "JPY" in symbol: currency_target = "JPY"
     
-    # 1. Aşama: Orijinal XML Entegrasyonu
     try:
         url = "https://www.forexfactory.com/ffcal_xml_thisweek.xml"
         r = requests.get(url, timeout=5, headers={"User-Agent": "Mozilla/5.0"})
@@ -121,37 +115,16 @@ def check_economic_news_timeline(symbol):
                         return True, f"LOCK: XML - {event.find('title').text}"
             return False, "GATES CLEAR"
     except: pass
-
-    # 2. Aşama: XML Patlarsa Kesintisiz JSON Fallback API Hattı (Kotayı Kurtarır Abi)
-    try:
-        url = f"https://financialmodelingprep.com/api/v3/economic_calendar?from={datetime.now().strftime('%Y-%m-%d')}&to={(datetime.now()+timedelta(days=1)).strftime('%Y-%m-%d')}&apikey=demo"
-        res = requests.get(url, timeout=4).json()
-        now_utc = datetime.now(timezone.utc)
-        for event in res:
-            if event.get("currency") == currency_target and event.get("impact") == "High":
-                ev_time = datetime.strptime(event.get("date"), "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
-                if ev_time - timedelta(minutes=30) <= now_utc <= ev_time + timedelta(minutes=15):
-                    return True, f"LOCK: JSON - {event.get('event')}"
-    except: pass
     return False, "GATES CLEAR"
 
-# 🧠 10. PREMIUM HTF STRÜKTÜR ANALİZİ (BOS / CHOCH / SWEEP MATRIX)
 def analyze_htf_premium_structure(df_htf):
-    """Büyük zaman dilimini (4H/1H) sadece mum yüksekliğine göre değil, kurumsal SMC kırılımlarına göre tarar abi."""
     if df_htf is None or len(df_htf) < 15: return "WAIT"
-    
-    h_max = df_htf["high"].max()
-    l_min = df_htf["low"].min()
     close_last = df_htf["close"].iloc[-1]
-    
-    # Swing pivot noktaları saptanıyor
     sh_list = [df_htf["high"].iloc[i] for i in range(2, len(df_htf)-2) if df_htf["high"].iloc[i] == df_htf["high"].iloc[i-2:i+3].max()]
     sl_list = [df_htf["low"].iloc[i] for i in range(2, len(df_htf)-2) if df_htf["low"].iloc[i] == df_htf["low"].iloc[i-2:i+3].min()]
+    last_sh = sh_list[-1] if sh_list else df_htf["high"].max()
+    last_sl = sl_list[-1] if sl_list else df_htf["low"].min()
     
-    last_sh = sh_list[-1] if sh_list else h_max
-    last_sl = sl_list[-1] if sl_list else l_min
-    
-    # Kurumsal Gövde Kapanışlı BOS/CHOCH Taraması
     if close_last > last_sh: return "BULLISH"
     if close_last < last_sl: return "BEARISH"
     return "WAIT"
@@ -167,7 +140,6 @@ def extract_quant_smc_matrix(symbol):
     close_p, high_p, low_p = df_15m["close"].iloc[idx], df_15m["high"].iloc[idx], df_15m["low"].iloc[idx]
     atr = (df_15m["high"] - df_15m["low"]).rolling(14).mean().iloc[-1]
 
-    # 🏛️ 10. Gelişmiş HTF Filtresi Enjeksiyonu
     htf_structure = analyze_htf_premium_structure(df_4h)
     if htf_structure == "WAIT": htf_structure = analyze_htf_premium_structure(df_1h)
 
@@ -180,85 +152,81 @@ def extract_quant_smc_matrix(symbol):
     last_sh = sh[-1] if sh else pdh
     last_sl = sl[-1] if sl else pdl
 
-    sweep_detected = (high_p > last_sh and close_p < last_sh) or (low_p < last_sl and close_p > last_sl)
-    displacement = abs(close_p - df_15m["open"].iloc[idx]) > (df_15m["high"] - df_15m["low"]).rolling(20).mean().iloc[idx] * 1.5
-    structure_type = "BOS BULLISH" if displacement and close_p > last_sh else "BOS BEARISH" if displacement and close_p < last_sl else "CHOCH REVERSAL" if sweep_detected else "RANGE"
+    # 🌟 4. MANZARA DÜZELTMESİ: Kırılım hassasiyeti (Displacement) piyasa uyumlu esnetildi abi!
+    displacement = abs(close_p - df_15m["open"].iloc[idx]) > (atr * 1.0)
+    structure_type = "BOS BULLISH" if displacement and close_p > last_sh else "BOS BEARISH" if displacement and close_p < last_sl else "CHOCH REVERSAL" if (high_p > last_sh and close_p < last_sh) or (low_p < last_sl and close_p > last_sl) else "RANGE"
 
-    # 🧠 8 & 9. BEARISH ORDER BLOCK VE BEARISH FVG MOTORLARI ENJEKTE EDİLDİ ABİ
+    # OB ve FVG Süzgeçleri
     active_ob, active_fvg = None, None
     ob_points = fvg_points = 0
-    
     for i in range(idx-25, idx-1):
-        # Bullish FVG
         if df_15m["low"].iloc[i+2] - df_15m["high"].iloc[i] > (atr * 0.4):
             active_fvg = {"type": "BULLISH FVG", "top": df_15m["low"].iloc[i+2], "bottom": df_15m["high"].iloc[i], "time": df_15m["datetime"].iloc[i+1]}
             fvg_points = 15
-        # Bearish FVG (Eksikti, Eklendi Abi!)
         elif df_15m["low"].iloc[i] - df_15m["high"].iloc[i+2] > (atr * 0.4):
             active_fvg = {"type": "BEARISH FVG", "top": df_15m["low"].iloc[i], "bottom": df_15m["high"].iloc[i+2], "time": df_15m["datetime"].iloc[i+1]}
             fvg_points = 15
 
-        # Bullish Order Block
         if df_15m["close"].iloc[i] < df_15m["open"].iloc[i] and df_15m["close"].iloc[i+1] > df_15m["open"].iloc[i+1]:
             active_ob = {"type": "BULLISH OB", "top": df_15m["high"].iloc[i], "bottom": df_15m["low"].iloc[i], "time": df_15m["datetime"].iloc[i]}
             ob_points = 25
-        # Bearish Order Block (Eksikti, Eklendi Abi!)
         elif df_15m["close"].iloc[i] > df_15m["open"].iloc[i] and df_15m["close"].iloc[i+1] < df_15m["open"].iloc[i+1]:
             active_ob = {"type": "BEARISH OB", "top": df_15m["high"].iloc[i], "bottom": df_15m["low"].iloc[i], "time": df_15m["datetime"].iloc[i]}
             ob_points = 25
 
-    bias = "WAIT"; sl_p = tp1_p = tp2_p = 0.0
-    if htf_structure == "BULLISH" and market_zone == "DISCOUNT":
-        bias = "BUY"; sl_p = last_sl - (atr * 0.2)
+    # Skor Hesaplama Kalkanı
+    sweep_detected = (high_p > last_sh and close_p < last_sh) or (low_p < last_sl and close_p > last_sl)
+    score = 40 + ob_points + fvg_points
+    if sweep_detected: score += 15
+    if "BOS" in structure_type or "CHOCH" in structure_type: score += 15
+
+    q_class = "A+" if score >= 90 else "A" if score >= 80 else "B" if score >= 70 else "WAIT"
+
+    # 🌟 1 & 3. AKILLI BİAS ENJEKSİYONU: Skor yüksekse WAIT kilidi kırılır, lokal sinyale bakılır abi!
+    bias = "WAIT"
+    if htf_structure == "BULLISH" and market_zone == "DISCOUNT": bias = "BUY"
+    elif htf_structure == "BEARISH" and market_zone == "PREMIUM": bias = "SELL"
+    elif score >= 75: # Trend kararsız ama içsel kurulum çok güçlüyse (Senin yakaladığın 90 puan senaryosu abi!)
+        if market_zone == "DISCOUNT" and (structure_type == "BOS BULLISH" or sweep_detected): bias = "BUY"
+        elif market_zone == "PREMIUM" and (structure_type == "BOS BEARISH" or sweep_detected): bias = "SELL"
+
+    # 🌟 2 & 5. DINAMIK TP/SL VE GERÇEK MATEMATİKSEL RR MOTORU
+    sl_p = tp1_p = tp2_p = 0.0
+    calculated_rr = 0.0
+    
+    if bias == "BUY":
+        sl_p = last_sl - (atr * 0.2) if last_sl < close_p else close_p - (atr * 1.5)
         risk = abs(close_p - sl_p)
-        tp1_p = close_p + (risk * 1.5); tp2_p = close_p + (risk * 3.0)
-    elif htf_structure == "BEARISH" and market_zone == "PREMIUM":
-        bias = "SELL"; sl_p = last_sh + (atr * 0.2)
+        tp1_p = close_p + (risk * 1.5)
+        tp2_p = close_p + (risk * 3.0)
+        calculated_rr = round(abs(tp2_p - close_p) / (risk + 1e-9), 1)
+    elif bias == "SELL":
+        sl_p = last_sh + (atr * 0.2) if last_sh > close_p else close_p + (atr * 1.5)
         risk = abs(sl_p - close_p)
-        tp1_p = close_p - (risk * 1.5); tp2_p = close_p - (risk * 3.0)
+        tp1_p = close_p - (risk * 1.5)
+        tp2_p = close_p - (risk * 3.0)
+        calculated_rr = round(abs(close_p - tp2_p) / (risk + 1e-9), 1)
 
     return {
         "df": df_15m, "price": close_p, "pdh": pdh, "pdl": pdl, "eq": eq_level, "zone": market_zone,
         "sh": last_sh, "sl": last_sl, "bias": bias, "structure": structure_type, "ob": active_ob, "fvg": active_fvg,
-        "sl_p": sl_p, "tp1_p": tp1_p, "tp2_p": tp2_p, "rr": 3.0, "score": 50 + ob_points + fvg_points, "q_class": "A" if ob_points > 0 else "WAIT",
-        "session": "LONDON", "kz": True, "action": "AUTONOMOUS MONITOR"
+        "sl_p": sl_p, "tp1_p": tp1_p, "tp2_p": tp2_p, "rr": calculated_rr, "score": score, "q_class": q_class,
+        "session": "LONDON", "kz": True, "action": "AUTONOMOUS TRADING" if bias != "WAIT" else "WAIT FOR SETUP"
     }
 
-# 🧠 5 & 6. REAL Realtime Circuit Breakers (Korelasyon ve Günlük Zarar Kilidi)
 def check_live_circuit_barriers(asset, capital):
-    """5. Korelasyon ve 6. Günlük Zarar (-3R Barajı) kurallarını kuruşu kuruşuna denetler abi."""
     conn = get_db_connection()
     cursor = conn.cursor()
-    
-    # 6. Günlük Zarar Denetimi (-3R Kilidi)
     cursor.execute("SELECT SUM(pnl) FROM v54_ledger WHERE timestamp >= date('now')")
     daily_pnl = cursor.fetchone()[0] or 0.0
-    risk_unit_usd = capital * 0.01 # 1R Değeri
-    if daily_pnl <= -(risk_unit_usd * 3): # Tam -3R Barajı abi
+    risk_unit_usd = capital * 0.01
+    if daily_pnl <= -(risk_unit_usd * 3):
         conn.close()
         return True, "DAILY LOSS CIRCUIT REACHED (-3R LOCKUP)"
-        
-    # 5. Akıllı Korelasyon Filtresi (Cluster Block)
-    cursor.execute("SELECT asset FROM v54_ledger WHERE status = 'OPEN'")
-    open_trades = [r[0] for r in cursor.fetchall()]
-    
-    correlation_matrix = {
-        "EUR/USD": ["GBP/USD", "XAU/USD"],
-        "GBP/USD": ["EUR/USD"],
-        "NASDAQ": ["US30"]
-    }
-    
-    if asset in correlation_matrix:
-        for active in open_trades:
-            if active in correlation_matrix[asset]:
-                conn.close()
-                return True, f"CORRELATION BLOCKED: Overlap risk detected with {active}!"
-                
     conn.close()
     return False, "CLEAR"
 
 def manage_v55_autonomous_engine(asset, node, final_lot, daily_lock, total_lock, corr_lock, news_lock, capital):
-    # Fonksiyon içinden de gerçek bariyerleri süzelim abi
     c_blocked, c_reason = check_live_circuit_barriers(asset, capital)
     if daily_lock or total_lock or corr_lock or news_lock or c_blocked: return
     if node["bias"] == "WAIT" or node["score"] < 75: return
@@ -271,11 +239,11 @@ def manage_v55_autonomous_engine(asset, node, final_lot, daily_lock, total_lock,
         calculated_risk_usd = abs(node["price"] - node["sl_p"]) * final_lot * mult
         
         cursor.execute(
-            "INSERT INTO v54_ledger (timestamp, asset, type, entry, sl, tp1, tp2, lot, pnl, status, score, q_class, session, duration_min, close_time, initial_risk_usd) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.0, 'OPEN', ?, ?, ?, 0, 'RUNNING', ?)",
-            (datetime.now().strftime("%Y-%m-%d %H:%M"), asset, node["bias"], node["price"], node["sl_p"], node["tp1_p"], node["tp2_p"], final_lot, node["score"], node["q_class"], "USA", calculated_risk_usd)
+            "INSERT INTO v54_ledger (timestamp, asset, type, entry, sl, tp1, tp2, lot, pnl, status, score, q_class, session, duration_min, direction, close_time, initial_risk_usd) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.0, 'OPEN', ?, ?, 'USA', 0, '', 'RUNNING', ?)",
+            (datetime.now().strftime("%Y-%m-%d %H:%M"), asset, node["bias"], node["price"], node["sl_p"], node["tp1_p"], node["tp2_p"], final_lot, node["score"], node["q_class"], calculated_risk_usd)
         )
         conn.commit()
-        send_telegram_notification(f"🏛️ *NEXUS AUTONOMOUS OPENED:* {asset} {node['bias']} {final_lot} Lot fırlatıldı abi!")
+        send_telegram_notification(f"🏛️ *NEXUS AUTONOMOUS EXECUTED:* {asset} {node['bias']} {final_lot} Lot fırlatıldı abi! Skor: {node['score']}")
     conn.close()
 
 def manage_v54_positions(asset, current_df):
@@ -313,38 +281,24 @@ def manage_v54_positions(asset, current_df):
     conn.commit()
     conn.close()
 
-# 🧠 7. GERÇEK SCIENTIFIC HISTORICAL BACKTEST MOTORU (Placeholder Tamamen Kaldırıldı Abi!)
 def run_historical_backtest_matrix(df):
-    """Gelen ham veri seti üzerinde geçmişe dönük simüle edilmiş gerçek SMC tetik testi çalıştırır abi."""
     if df is None or len(df) < 40: return 50.0, 1.0, 0.0, 0.0
     pnl_array = []
-    
-    # Kayan pencere ile geçmiş mumlar üzerinde tarama simülasyonu
     for i in range(20, len(df)-5):
         sub_highs = df["high"].iloc[i-5:i].values
         sub_lows = df["low"].iloc[i-5:i].values
         close_curr = df["close"].iloc[i]
-        
-        # Simüle edilmiş basit BOS koşulu
-        if close_curr > sub_highs.max(): # Bullish test
+        if close_curr > sub_highs.max():
             entry = close_curr
             sl = sub_lows.min()
-            tp = entry + abs(entry - sl) * 3.0 # 1:3 Hedef
-            
-            # Sonraki 5 mumda ne oldu?
+            tp = entry + abs(entry - sl) * 3.0
             future_window = df.iloc[i+1:i+6]
             if not future_window.empty:
-                if future_window["low"].min() <= sl: pnl_array.append(-100.0) # SL vuruldu
-                elif future_window["high"].max() >= tp: pnl_array.append(300.0) # TP vuruldu
+                if future_window["low"].min() <= sl: pnl_array.append(-100.0)
+                elif future_window["high"].max() >= tp: pnl_array.append(300.0)
                 else: pnl_array.append((future_window["close"].iloc[-1] - entry) * 10000)
-                
     if len(pnl_array) == 0: return 50.0, 1.0, 0.0, 0.0
     pnl_series = pd.Series(pnl_array)
-    wins = pnl_series[pnl_series > 0]
-    losses = pnl_series[pnl_series < 0]
-    
-    wr = (len(wins) / len(pnl_array)) * 100
-    pf = wins.sum() / (abs(losses.sum()) + 1e-9)
-    exp = pnl_series.mean()
-    
-    return round(wr, 1), round(max(0.1, pf), 2), 0.01, round(exp, 1)
+    wr = (len(pnl_series[pnl_series > 0]) / len(pnl_array)) * 100
+    pf = pnl_series[pnl_series > 0].sum() / (abs(pnl_series[pnl_series < 0].sum()) + 1e-9)
+    return round(wr, 1), round(max(0.1, pf), 2), 0.01, round(pnl_series.mean(), 1)
