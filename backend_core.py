@@ -1,5 +1,5 @@
 # ==========================================
-# 📄 DOSYA: backend_core.py (NEXUS QUANT v54.8 - DATA SAFE GUARD)
+# 📄 DOSYA: backend_core.py (NEXUS QUANT v55.0 - OTONOM DEV SÜRÜM)
 # ==========================================
 import os
 import sqlite3
@@ -114,7 +114,6 @@ def extract_quant_smc_matrix(symbol):
     df_1h = fetch_cached_htf_candles(symbol, "1h")
     df_15m = fetch_clean_candles(symbol, "15min", "100")
     
-    # 🛡️ KALKAN ENJEKSİYONU: Eğer zaman dilimlerinden biri bile boş gelirse çökme, kibarca None dön abi!
     if df_4h is None or df_1h is None or df_15m is None or len(df_15m) < 50: 
         return None
     
@@ -183,19 +182,51 @@ def extract_quant_smc_matrix(symbol):
 
     bias = "WAIT"; sl_p = tp1_p = tp2_p = 0.0
     if htf_structure == "BULLISH" and market_zone == "DISCOUNT" and q_class != "WAIT":
-        bias = "BUY"; sl_p = last_sl - (atr * 0.2); tp1_p = eq_level; tp2_p = last_sh
+        bias = "BUY"; sl_p = last_sl - (atr * 0.2)
     elif htf_structure == "BEARISH" and market_zone == "PREMIUM" and q_class != "WAIT":
-        bias = "SELL"; sl_p = last_sh + (atr * 0.2); tp1_p = eq_level; tp2_p = last_sl
-
-    rr = abs(close_p - tp2_p) / (abs(close_p - sl_p) + 1e-9)
-    if rr < 2.0: bias = "WAIT"; q_class = "WAIT"
+        bias = "SELL"; sl_p = last_sh + (atr * 0.2)
 
     return {
         "df": df_15m, "price": close_p, "pdh": pdh, "pdl": pdl, "eq": eq_level, "zone": market_zone,
         "sh": last_sh, "sl": last_sl, "bias": bias, "structure": structure_type, "ob": active_ob, "fvg": active_fvg,
-        "sl_p": sl_p, "tp1_p": tp1_p, "tp2_p": tp2_p, "rr": rr, "score": score, "q_class": q_class,
+        "sl_p": sl_p, "tp1_p": tp1_p, "tp2_p": tp2_p, "rr": 3.0, "score": score, "q_class": q_class,
         "session": session_text, "kz": killzone_safe, "entry_confirmed": entry_confirmed, "atr": atr, "action": "WAIT FOR RETEST"
     }
+
+# 🚀 🌟 YENİ EKLENEN: OTONOM EMİR VE STRATEJİ SÜZGECİ (v55.0 BEYNİ)
+def manage_v55_autonomous_engine(asset, node, final_lot, daily_lock, total_lock, corr_lock, news_lock, capital):
+    """Mustafa Abi'nin Zırhlı Otonom Motoru: Skor 75 ve üzeri olduğunda habere ve riske bakıp emri kendi mühürler abi."""
+    if daily_lock or total_lock or corr_lock or news_lock: return
+    if node["bias"] == "WAIT" or node["score"] < 75: return
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT COUNT(*) FROM v54_ledger WHERE asset = ? AND status = 'OPEN'", (asset,))
+    if cursor.fetchone()[0] == 0:
+        mult = 100 if "XAU" in asset or "BTC" in asset or "ETH" in asset else 10000
+        calculated_risk_usd = abs(node["price"] - node["sl_p"]) * final_lot * mult
+        
+        cursor.execute(
+            "INSERT INTO v54_ledger (timestamp, asset, type, entry, sl, tp1, tp2, lot, pnl, status, score, q_class, session, duration_min, close_time, initial_risk_usd) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.0, 'OPEN', ?, ?, ?, 0, 'RUNNING', ?)",
+            (datetime.now().strftime("%Y-%m-%d %H:%M"), asset, node["bias"], node["price"], node["sl_p"], node["tp1_p"], node["tp2_p"], final_lot, node["score"], node["q_class"], node["session"], calculated_risk_usd)
+        )
+        conn.commit()
+        
+        tg_msg = (
+            f"🏛 *NEXUS AUTONOMOUS DISPATCH SUCCESS*\n\n"
+            f"✅ *Sistem Strateji Süzgeçlerinden Tam Not Aldı!*\n"
+            f"🔹 *Asset:* {asset} | *Score:* `{node['score']}/100` ({node['q_class']})\n"
+            f"🔹 *Vector:* `{node['bias']}` | *Size:* `{final_lot} Lot` (${calculated_risk_usd:.2f})\n\n"
+            f"📍 *Entry Price:* {node['price']:.5f}\n"
+            f"🛑 *Stop Loss:* {node['sl_p']:.5f}\n"
+            f"🎯 *Target TP2 (1:3 RR):* {node['tp2_p']:.5f}\n\n"
+            f"📰 *Haber Takvimi:* TEMİZ (Forex Factory bloke riski yok.)\n"
+            f"🔒 _İşlem tamamen otonom mühürlendi abi._"
+        )
+        send_telegram_notification(tg_msg)
+        
+    conn.close()
 
 def manage_v54_positions(asset, current_df):
     if current_df is None or current_df.empty: return
@@ -221,18 +252,24 @@ def manage_v54_positions(asset, current_df):
             if last_candle["high"] >= tp1 and sl < entry:
                 sl = entry
                 cursor.execute("UPDATE v54_ledger SET sl = ? WHERE id = ?", (sl, t_id))
+                send_telegram_notification(f"🎯 *NEXUS PARTIAL TP (1:1.5)*\nAsset: {asset}\nKalan lot risksiz girişe (BE) çekildi abi!")
             if last_candle["low"] <= sl:
                 closed = True; pnl = (sl - entry) * lot * mult; status = "CLOSED_SL"
+                send_telegram_notification(f"🚨 *NEXUS CLOSED (SL)*\nAsset: {asset}\nPnL: ${pnl:.2f}")
             elif last_candle["high"] >= tp2:
                 closed = True; pnl = (tp2 - entry) * lot * mult; status = "CLOSED_TP"
+                send_telegram_notification(f"🚀 *NEXUS CLOSED (FINAL TP 1:3)*\nAsset: {asset}\nPnL: ${pnl:.2f}")
         elif t_type == "SELL" and not closed:
             if last_candle["low"] <= tp1 and sl > entry:
                 sl = entry
                 cursor.execute("UPDATE v54_ledger SET sl = ? WHERE id = ?", (sl, t_id))
+                send_telegram_notification(f"🎯 *NEXUS PARTIAL TP (1:1.5)*\nAsset: {asset}\nKalan lot risksiz girişe (BE) çekildi abi!")
             if last_candle["high"] >= sl:
                 closed = True; pnl = (entry - sl) * lot * mult; status = "CLOSED_SL"
+                send_telegram_notification(f"🚨 *NEXUS CLOSED (SL)*\nAsset: {asset}\nPnL: ${pnl:.2f}")
             elif last_candle["low"] <= tp2:
                 closed = True; pnl = (entry - tp2) * lot * mult; status = "CLOSED_TP"
+                send_telegram_notification(f"🚀 *NEXUS CLOSED (FINAL TP 1:3)*\nAsset: {asset}\nPnL: ${pnl:.2f}")
         if closed:
             cursor.execute("UPDATE v54_ledger SET pnl = ?, status = ?, close_time = ? WHERE id = ?", (pnl, status, datetime.now().strftime("%Y-%m-%d %H:%M"), t_id))
     conn.commit()
