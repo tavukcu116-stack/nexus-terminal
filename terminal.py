@@ -3,7 +3,6 @@
 # ==========================================
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
 import backend_core as core
 import analytics_engine as analytics
 from datetime import datetime, timezone
