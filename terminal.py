@@ -1,14 +1,16 @@
 # ==========================================
-# 📄 DOSYA: terminal.py (NEXUS QUANT v65.0 - RUNTIME FIXED)
+# 📄 DOSYA: terminal.py (NEXUS QUANT v65.1 - IMPORTS FIXED)
 # ==========================================
 import streamlit as st
 import pandas as pd
+import plotly.graph_objects as go
 import backend_core as core
 import analytics_engine as analytics
 from datetime import datetime, timezone
 from streamlit_autorefresh import st_autorefresh
+import os  # 🏛️ İŞTE EKSİK OLAN VE HATAYI ÇÖZEN ASİL KÜTÜPHANE ABİ!
 
-st.set_page_config(page_title="NEXUS EXECUTIVE v65.0", layout="wide", page_icon="🏛️")
+st.set_page_config(page_title="NEXUS EXECUTIVE v65.1", layout="wide", page_icon="🏛️")
 
 # Canlı Otomatik Tarama (60 Saniye)
 st_autorefresh(interval=60000, key="nexus_v65_final_refresh")
@@ -33,7 +35,7 @@ if st.sidebar.button("♻️ Clear Cache & Re-Scan", use_container_width=True):
     st.sidebar.success("Önbellek sıfırlandı abi!")
     st.rerun()
 
-st.markdown("<h2 style='margin-bottom:0px; font-weight:700;'>🏛️ NEXUS QUANT v65.0 — EXECUTIVE DESK</h2>", unsafe_allow_html=True)
+st.markdown("<h2 style='margin-bottom:0px; font-weight:700;'>🏛️ NEXUS QUANT v65.1 — EXECUTIVE DESK</h2>", unsafe_allow_html=True)
 st.markdown("<p style='color: #848e9c; font-size:12px; margin-top:2px; margin-bottom:15px;'>Fault-Tolerant Pure Retest Signal Suite</p>", unsafe_allow_html=True)
 
 WATCHLIST = ["EUR/USD", "GBP/USD", "XAU/USD"]
@@ -49,7 +51,6 @@ for asset in WATCHLIST:
     try:
         node = core.extract_quant_smc_matrix(asset)
         
-        # 🛡️ None Kalkanı: Veri hattı boşsa veya limit dolduysa çökme engellenir abi
         if node is None:
             screener_rows.append({"Aktif Pariteler": asset, "Trend Yönü": "WAIT", "SMC Skor": "0/100", "Son Sinyal": "WAIT", "Core Durumu": "DATA FETCH LIMIT / NULL"})
             continue
