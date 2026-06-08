@@ -1,5 +1,5 @@
 # ==========================================
-# 📄 DOSYA: terminal.py (NEXUS QUANT v65.1 - IMPORTS FIXED)
+# 📄 DOSYA: terminal.py (NEXUS QUANT v65.2 - DİNAMİK PUSU EKRANI)
 # ==========================================
 import streamlit as st
 import pandas as pd
@@ -7,9 +7,9 @@ import backend_core as core
 import analytics_engine as analytics
 from datetime import datetime, timezone
 from streamlit_autorefresh import st_autorefresh
-import os  # 🏛️ İŞTE EKSİK OLAN VE HATAYI ÇÖZEN ASİL KÜTÜPHANE ABİ!
+import os
 
-st.set_page_config(page_title="NEXUS EXECUTIVE v65.1", layout="wide", page_icon="🏛️")
+st.set_page_config(page_title="NEXUS EXECUTIVE v65.2", layout="wide", page_icon="🏛️")
 
 # Canlı Otomatik Tarama (60 Saniye)
 st_autorefresh(interval=60000, key="nexus_v65_final_refresh")
@@ -34,8 +34,8 @@ if st.sidebar.button("♻️ Clear Cache & Re-Scan", use_container_width=True):
     st.sidebar.success("Önbellek sıfırlandı abi!")
     st.rerun()
 
-st.markdown("<h2 style='margin-bottom:0px; font-weight:700;'>🏛️ NEXUS QUANT v65.1 — EXECUTIVE DESK</h2>", unsafe_allow_html=True)
-st.markdown("<p style='color: #848e9c; font-size:12px; margin-top:2px; margin-bottom:15px;'>Fault-Tolerant Pure Retest Signal Suite</p>", unsafe_allow_html=True)
+st.markdown("<h2 style='margin-bottom:0px; font-weight:700;'>🏛️ NEXUS QUANT v65.2 — EXECUTIVE DESK</h2>", unsafe_allow_html=True)
+st.markdown("<p style='color: #848e9c; font-size:12px; margin-top:2px; margin-bottom:15px;'>Dinamik Pusu İzleme ve Safkan Retest Paneli</p>", unsafe_allow_html=True)
 
 WATCHLIST = ["EUR/USD", "GBP/USD", "XAU/USD"]
 
@@ -51,7 +51,7 @@ for asset in WATCHLIST:
         node = core.extract_quant_smc_matrix(asset)
         
         if node is None:
-            screener_rows.append({"Aktif Pariteler": asset, "Trend Yönü": "WAIT", "SMC Skor": "0/100", "Son Sinyal": "WAIT", "Core Durumu": "DATA FETCH LIMIT / NULL"})
+            screener_rows.append({"Aktif Pariteler": asset, "Trend Yönü": "BEKLİYOR", "SMC Skor": "0/100", "Sinyal / Pusu Sebebi": "⏳ DATA FETCH LIMIT / NULL"})
             continue
             
         now = datetime.now(timezone.utc)
@@ -60,13 +60,13 @@ for asset in WATCHLIST:
         is_allowed = True
         if spread_pips > 3.5 or core.check_economic_news_barrier(asset):
             is_allowed = False
-            node["action"] = "BLOCKED BY SPREAD/NEWS"
+            node["action"] = "BLOCKED BY SPREAD/NEWS GUARD"
             
         if (st.session_state.last_signal_asset == asset and 
             abs(st.session_state.last_signal_price - node["price"]) < 0.0005 and 
             (now - st.session_state.last_signal_time).total_seconds() / 60 < 60):
             is_allowed = False
-            node["action"] = "COOLDOWN LOCK"
+            node["action"] = "BLOCKED: COOLDOWN ACTIVE"
 
         if is_allowed and node["bias"] != "WAIT" and node["score"] >= 75:
             success = core.send_telegram_signal_report(
@@ -83,19 +83,19 @@ for asset in WATCHLIST:
                     "price": node["price"], "rr": node["rr"], "score": node["score"]
                 })
 
-        htf_trend_text = "WAIT"
+        htf_trend_text = "YOK (RANGE)"
         for r in node.get("reasons", []):
             if "HTF Trend" in r: htf_trend_text = r.split(":")[1].strip() if ":" in r else r
 
+        # 🎯 MUSTAFA ABİ'NİN İSTEDİĞİ KISIM BURASI: Sadece WAIT yazmaz, doğrudan backend'den gelen "action" sebebini ekrana yazar.
         screener_rows.append({
             "Aktif Pariteler": asset,
             "Trend Yönü": htf_trend_text,
             "SMC Skor": f"{node['score']}/100",
-            "Son Sinyal": f"{node['bias']} @ {node['price']:.5f}" if node['bias'] != "WAIT" else "WAIT (PUSU)",
-            "Core Durumu": node["action"]
+            "Sinyal / Pusu Sebebi": f"🔥 {node['bias']} @ {node['price']:.5f}" if node['bias'] != "WAIT" else f"⏳ {node['action']}"
         })
     except Exception as e:
-        screener_rows.append({"Aktif Pariteler": asset, "Trend Yönü": "ERROR", "SMC Skor": "0/100", "Son Sinyal": "ERROR", "Core Durumu": f"RUNTIME CAP: {str(e)}"})
+        screener_rows.append({"Aktif Pariteler": asset, "Trend Yönü": "ERROR", "SMC Skor": "0/100", "Sinyal / Pusu Sebebi": f"❌ RUNTIME CAP: {str(e)}"})
 
 # Tablo Çıktısı
 if screener_rows:
