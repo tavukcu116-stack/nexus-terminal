@@ -1,118 +1,96 @@
-# ==========================================
-# 📄 DOSYA: terminal.py (NEXUS QUANT v65.2 - DİNAMİK PUSU EKRANI)
-# ==========================================
-import streamlit as st
-import pandas as pd
-import backend_core as core
-import analytics_engine as analytics
-from datetime import datetime, timezone
-from streamlit_autorefresh import st_autorefresh
+import openai
+import json
 import os
 
-st.set_page_config(page_title="NEXUS EXECUTIVE v65.2", layout="wide", page_icon="🏛️")
+class AITradeTerminal:
+    def _init_(self, api_key=None):
+        """
+        AI Karar Terminali.
+        API anahtarini ortam degiskenlerinden veya doğrudan parametre olarak alir.
+        """
+        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        if self.api_key:
+            openai.api_key = self.api_key
 
-# Canlı Otomatik Tarama (60 Saniye)
-st_autorefresh(interval=60000, key="nexus_v65_final_refresh")
+    def _generate_system_prompt(self):
+        """
+        Yapaya zekaya katı kurumsal kurallari dikte eden profesyonel sistem promptu.
+        Goz boyamaya veya esneklige kesinlikle izin verilmez.
+        """
+        return """Sen, Ekin Yüzbaşıoğlu tarzında mekanik Smart Money Concepts (SMC) ve Price Action kurallarıyla çalışan profesyonel bir Forex Analiz Motorusun. 
+Duygusallığa, esnekliğe ve yüzeysel yorumlara yer yok. Sana sağlanan teknik ve temel analiz verilerini strictly (katı bir şekilde) süzgeçten geçireceksin.
 
-if "signal_history" not in st.session_state: st.session_state.signal_history = []
-if "last_signal_asset" not in st.session_state: st.session_state.last_signal_asset = None
-if "last_signal_price" not in st.session_state: st.session_state.last_signal_price = 0.0
-if "last_signal_time" not in st.session_state: st.session_state.last_signal_time = datetime.min.replace(tzinfo=timezone.utc)
+İŞLEM KONTROL PROTOKOLÜ (Mekanik Kurallar):
+1. HABER DURUMU: Eğer 'news_lockdown' değeri True ise, piyasa manipülatif dalgalanmalara açık demektir. Grafik ne kadar kusursuz olursa olsun anında 'WAIT' kararı vereceksin.
+2. LİKİDİTE (SWEEP): Ekin'in stratejisinin kalbi likiditedir. 'liquidity_sweep_status' değeri 'NONE' ise, piyasada henüz yakıt toplanmamıştır. Kurumsal hamle başlamaz. Kesinlikle 'WAIT' diyeceksin.
+3. TREND & YAPI UYUMU: 'market_bias' ile LTF dönüş yapısı uyumlu olmalıdır. Bias BEARISH ise sadece Short (SELL), BULLISH ise sadece Long (BUY) yönlü onay arayabilirsin.
+4. MİKRO STOP & RR MATEMATİĞİ: 
+   - Giriş seviyesini (ENTRY_LEVEL) anlık fiyata veya FVG bölgesinin testine kuracaksın.
+   - Stop seviyesini (STOP_LOSS), likiditeyi alan iğnenin tam ucuna (Safe Exit) milimetrik olarak koyacaksın (Dar stop).
+   - Hedef seviyesini (TAKE_PROFIT), grafik verilerindeki zıt yönlü likidite havuzuna kuracaksın.
+   - Hesapladığın Risk/Ödül Oranı (Estimated RR) KESİNLİKLE minimum 1:4.0 olmak zorundadır. Altındaysa işlemi reddet!
 
-st.markdown("""
-    <style>
-    .stApp { background-color: #0c0d12 !important; color: #b2b5be !important; }
-    h1, h2, h3, h4, label { color: #ffffff !important; font-family: 'Inter', sans-serif !important; font-weight: 600; }
-    div[data-testid="stMetric"] { background: #131722 !important; border: 1px solid #2a2e39 !important; border-radius: 4px !important; padding: 12px !important; }
-    .status-online { color: #00ebc7; font-weight: bold; font-family: monospace; }
-    .status-offline { color: #ff5a5f; font-weight: bold; font-family: monospace; }
-    </style>
-""", unsafe_allow_html=True)
+ÇIKTI FORMATI:
+Yalnızca ve yalnızca aşağıdaki JSON formatında yanıt vereceksin. Markdown etiketleri (json ... ), açıklama satırları veya ekstra metinler KESİNLİKLE eklenmeyecektir:
+{
+  "DECISION": "BUY" | "SELL" | "WAIT",
+  "PANEL_STATUS": "İşlem aktifse 'ORDER_READY', WAIT ise tam sebebi (Örn: HIGH IMPACT NEWS LOCKDOWN, HTF TREND MISALIGNMENT, NO LIQUIDITY SWEEP, RR TOO LOW, AWAITING OB RETEST)",
+  "ENTRY_LEVEL": 0.0,
+  "STOP_LOSS": 0.0,
+  "TAKE_PROFIT": 0.0,
+  "ESTIMATED_RR": "0.0 (Örn: 4.5)"
+}"""
 
-if st.sidebar.button("♻️ Clear Cache & Re-Scan", use_container_width=True):
-    st.cache_data.clear()
-    st.sidebar.success("Önbellek sıfırlandı abi!")
-    st.rerun()
+    def analyze_and_decide(self, news_status, market_analysis):
+        """
+        Haber ve SMC verilerini birlestirerek yapay zekadan nihai kurumsal karari ister.
+        """
+        if not self.api_key and not openai.api_key:
+            return {
+                "DECISION": "WAIT",
+                "PANEL_STATUS": "SYSTEM_ERROR: MISSING_API_KEY",
+                "ENTRY_LEVEL": 0.0, "STOP_LOSS": 0.0, "TAKE_PROFIT": 0.0, "ESTIMATED_RR": "0.0"
+            }
 
-st.markdown("<h2 style='margin-bottom:0px; font-weight:700;'>🏛️ NEXUS QUANT v65.2 — EXECUTIVE DESK</h2>", unsafe_allow_html=True)
-st.markdown("<p style='color: #848e9c; font-size:12px; margin-top:2px; margin-bottom:15px;'>Dinamik Pusu İzleme ve Safkan Retest Paneli</p>", unsafe_allow_html=True)
+        # Yapay zekaya beslenecek veri paketini hazirliyoruz
+        payload = {
+            "news_lockdown": news_status.get("lockdown", False),
+            "news_reason": news_status.get("reason", ""),
+            "market_bias": market_analysis.get("market_bias", "NONE"),
+            "liquidity_sweep_status": market_analysis.get("liquidity_sweep_status", "NONE"),
+            "swept_liquidity_level": market_analysis.get("swept_liquidity_level", None),
+            "fvg_detected": market_analysis.get("fvg_detected", False),
+            "fvg_type": market_analysis.get("fvg_type", "NONE"),
+            "fvg_zone": market_analysis.get("fvg_zone", {}),
+            "current_close": market_analysis.get("current_close", 0.0),
+            "highest_price_20d": market_analysis.get("highest_price_20d", 0.0),
+            "lowest_price_20d": market_analysis.get("lowest_price_20d", 0.0)
+        }
 
-WATCHLIST = ["EUR/USD", "GBP/USD", "XAU/USD"]
-
-tg_token = os.getenv("TELEGRAM_BOT_TOKEN")
-tg_chat = os.getenv("TELEGRAM_CHAT_ID")
-tg_status_html = "<span class='status-online'>ONLINE</span>" if tg_token and tg_chat else "<span class='status-offline'>OFFLINE</span>"
-st.sidebar.markdown(f"**Telegram Status:** {tg_status_html}", unsafe_allow_html=True)
-
-screener_rows = []
-
-for asset in WATCHLIST:
-    try:
-        node = core.extract_quant_smc_matrix(asset)
-        
-        if node is None:
-            screener_rows.append({"Aktif Pariteler": asset, "Trend Yönü": "BEKLİYOR", "SMC Skor": "0/100", "Sinyal / Pusu Sebebi": "⏳ DATA FETCH LIMIT / NULL"})
-            continue
-            
-        now = datetime.now(timezone.utc)
-        spread_pips, _, _ = core.get_live_spread_data(asset)
-        
-        is_allowed = True
-        if spread_pips > 3.5 or core.check_economic_news_barrier(asset):
-            is_allowed = False
-            node["action"] = "BLOCKED BY SPREAD/NEWS GUARD"
-            
-        if (st.session_state.last_signal_asset == asset and 
-            abs(st.session_state.last_signal_price - node["price"]) < 0.0005 and 
-            (now - st.session_state.last_signal_time).total_seconds() / 60 < 60):
-            is_allowed = False
-            node["action"] = "BLOCKED: COOLDOWN ACTIVE"
-
-        if is_allowed and node["bias"] != "WAIT" and node["score"] >= 75:
-            success = core.send_telegram_signal_report(
-                asset=asset, bias=node["bias"], entry=node["price"],
-                sl=node["sl_p"], tp1=node["tp1_p"], tp2=node["tp2_p"],
-                score=node["score"], reasons=node.get("reasons", [])
+        try:
+            response = openai.ChatCompletion.create(
+                model="gpt-4o", # Değişiklikleri ve katı mantığı en iyi simüle eden reasoning modeli
+                messages=[
+                    {"role": "system", "content": self._generate_system_prompt()},
+                    {"role": "user", "content": f"Mevcut Piyasa Durumu Verileri:\n{json.dumps(payload, indent=2)}"}
+                ],
+                temperature=0.0 # Sapmalari engellemek ve her zaman tutarli/katı kararlar almak icin 0 yapiyoruz
             )
-            if success:
-                st.session_state.last_signal_asset = asset
-                st.session_state.last_signal_price = node["price"]
-                st.session_state.last_signal_time = now
-                st.session_state.signal_history.append({
-                    "timestamp": now, "asset": asset, "bias": node["bias"],
-                    "price": node["price"], "rr": node["rr"], "score": node["score"]
-                })
+            
+            # Gelen yanıtı temizleyip JSON objesine donusturuyoruz
+            raw_content = response.choices[0].message.content.strip()
+            
+            # Olası markdown etiketlerini temizleme temizliği
+            if raw_content.startswith("```"):
+                raw_content = raw_content.split("\n", 1)[1].rsplit("\n", 1)[0].strip()
+                if raw_content.startswith("json"):
+                    raw_content = raw_content[4:].strip()
 
-        htf_trend_text = "YOK (RANGE)"
-        for r in node.get("reasons", []):
-            if "HTF Trend" in r: htf_trend_text = r.split(":")[1].strip() if ":" in r else r
+            return json.loads(raw_content)
 
-        # 🎯 MUSTAFA ABİ'NİN İSTEDİĞİ KISIM BURASI: Sadece WAIT yazmaz, doğrudan backend'den gelen "action" sebebini ekrana yazar.
-        screener_rows.append({
-            "Aktif Pariteler": asset,
-            "Trend Yönü": htf_trend_text,
-            "SMC Skor": f"{node['score']}/100",
-            "Sinyal / Pusu Sebebi": f"🔥 {node['bias']} @ {node['price']:.5f}" if node['bias'] != "WAIT" else f"⏳ {node['action']}"
-        })
-    except Exception as e:
-        screener_rows.append({"Aktif Pariteler": asset, "Trend Yönü": "ERROR", "SMC Skor": "0/100", "Sinyal / Pusu Sebebi": f"❌ RUNTIME CAP: {str(e)}"})
-
-# Tablo Çıktısı
-if screener_rows:
-    st.dataframe(pd.DataFrame(screener_rows), use_container_width=True, hide_index=True)
-
-st.markdown("---")
-
-st.subheader("📊 Enterprise Performance Metrics (Pure Stats)")
-stats = analytics.calculate_pure_metrics(st.session_state.signal_history)
-
-col_s1, col_s2, col_s3 = st.columns(3)
-with col_s1: st.metric("Win Rate", f"%{stats['win_rate']}")
-with col_s2: st.metric("Ortalama RR", f"1 : {stats['avg_rr']}")
-with col_s3: st.metric("Total Signals", len(st.session_state.signal_history))
-
-st.markdown("#### 📜 Last 30 Signals Monitor")
-if stats["last_30_signals"]:
-    st.dataframe(pd.DataFrame(stats["last_30_signals"]), use_container_width=True, hide_index=True)
-else:
-    st.info("Piyasa taranıyor abi, kriterler tam eşleştiğinde ilk sinyal buraya düşecek.")
+        except Exception as e:
+            return {
+                "DECISION": "WAIT",
+                "PANEL_STATUS": f"SYSTEM_ERROR: AI_ENGINE_EXCEPTION ({str(e)})",
+                "ENTRY_LEVEL": 0.0, "STOP_LOSS": 0.0, "TAKE_PROFIT": 0.0, "ESTIMATED_RR": "0.0"
+            }
